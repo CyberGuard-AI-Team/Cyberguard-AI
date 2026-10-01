@@ -3,13 +3,15 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: CyberGuard AI security telemetry and analysis API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: cyberguard
+    description: CyberGuard AI security operations
 paths:
   /healthz:
     get:
@@ -24,13 +26,396 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /cyberguard/overview:
+    get:
+      operationId: getCyberguardOverview
+      tags: [cyberguard]
+      summary: Get SOC dashboard overview
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CyberguardOverview"
+  /cyberguard/events:
+    get:
+      operationId: getCyberguardEvents
+      tags: [cyberguard]
+      summary: Search analyzed security events
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: severity
+          in: query
+          schema:
+            type: string
+            enum: [Critical, High, Medium, Low, Informational]
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        "200":
+          description: Filtered security events
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SecurityEvent" }
+  /cyberguard/events/upload:
+    post:
+      operationId: uploadCyberguardEvents
+      tags: [cyberguard]
+      summary: Validate and analyze a batch of uploaded security events
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SecurityEventBatch" }
+      responses:
+        "201":
+          description: Events ingested and analyzed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IngestResult" }
+        "400":
+          description: Invalid event batch
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /cyberguard/threats:
+    get:
+      operationId: getCyberguardThreats
+      tags: [cyberguard]
+      summary: List threat findings
+      responses:
+        "200":
+          description: Threat findings
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ThreatFinding" }
+  /cyberguard/threats/{threatId}:
+    patch:
+      operationId: updateCyberguardThreat
+      tags: [cyberguard]
+      summary: Update investigation status of a finding
+      parameters:
+        - name: threatId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ThreatStatusUpdate" }
+      responses:
+        "200":
+          description: Updated finding
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ThreatFinding" }
+        "404":
+          description: Finding not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /cyberguard/scans:
+    get:
+      operationId: getCyberguardScans
+      tags: [cyberguard]
+      summary: List recent AI Security Scans
+      responses:
+        "200":
+          description: Scan history
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SecurityScan" }
+    post:
+      operationId: startCyberguardScan
+      tags: [cyberguard]
+      summary: Start an authorized AI Security Scan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScanInput" }
+      responses:
+        "202":
+          description: Scan started
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SecurityScan" }
+  /cyberguard/scans/{scanId}:
+    get:
+      operationId: getCyberguardScan
+      tags: [cyberguard]
+      summary: Get scan progress and result
+      parameters:
+        - name: scanId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Current scan status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SecurityScan" }
+        "404":
+          description: Scan not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /cyberguard/devices:
+    get:
+      operationId: getCyberguardDevices
+      tags: [cyberguard]
+      summary: List enrolled endpoint devices
+      responses:
+        "200":
+          description: Device list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EndpointDevice" }
+  /cyberguard/analytics:
+    get:
+      operationId: getCyberguardAnalytics
+      tags: [cyberguard]
+      summary: Get event and threat aggregates
+      responses:
+        "200":
+          description: Analytics derived from stored events
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CyberguardAnalytics" }
+  /cyberguard/assistant/chat:
+    post:
+      operationId: askCyberguardAssistant
+      tags: [cyberguard]
+      summary: Ask a question grounded in current stored findings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssistantQuestion" }
+      responses:
+        "200":
+          description: Evidence-grounded response
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssistantAnswer" }
+  /cyberguard/demo/reset:
+    post:
+      operationId: resetCyberguardDemo
+      tags: [cyberguard]
+      summary: Regenerate explicitly labeled simulated telemetry
+      responses:
+        "200":
+          description: Demo dataset regenerated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IngestResult" }
 components:
   schemas:
     HealthStatus:
       type: object
       properties:
+        status: { type: string }
+      required: [status]
+    ErrorResponse:
+      type: object
+      properties:
+        error: { type: string }
+      required: [error]
+    SecurityEvent:
+      type: object
+      properties:
+        id: { type: string }
+        timestamp: { type: string, format: date-time }
+        eventId: { type: string }
+        eventType: { type: string }
+        user: { type: string }
+        sourceIp: { type: string }
+        destinationIp: { type: ["string", "null"] }
+        severity:
+          type: string
+          enum: [Critical, High, Medium, Low, Informational]
+        status: { type: string }
+        description: { type: string }
+        simulated: { type: boolean }
+        anomalyScore: { type: ["number", "null"] }
+      required: [id, timestamp, eventId, eventType, user, sourceIp, severity, status, description, simulated]
+    SecurityEventInput:
+      type: object
+      properties:
+        timestamp: { type: string, format: date-time }
+        eventId: { type: string, maxLength: 80 }
+        eventType: { type: string, maxLength: 120 }
+        user: { type: string, maxLength: 120 }
+        sourceIp: { type: string, maxLength: 64 }
+        destinationIp: { type: ["string", "null"], maxLength: 64 }
+        severity:
+          type: string
+          enum: [Critical, High, Medium, Low, Informational]
+        status: { type: string, maxLength: 80 }
+        description: { type: string, maxLength: 2000 }
+        simulated: { type: boolean, default: false }
+      required: [timestamp, eventId, eventType, user, sourceIp, severity, status, description]
+    SecurityEventBatch:
+      type: object
+      properties:
+        events:
+          type: array
+          minItems: 1
+          maxItems: 5000
+          items: { $ref: "#/components/schemas/SecurityEventInput" }
+      required: [events]
+    IngestResult:
+      type: object
+      properties:
+        accepted: { type: integer }
+        rejected: { type: integer }
+        simulated: { type: boolean }
+        message: { type: string }
+      required: [accepted, rejected, simulated, message]
+    ThreatFinding:
+      type: object
+      properties:
+        id: { type: string }
+        timestamp: { type: string, format: date-time }
+        title: { type: string }
+        category: { type: string }
+        severity:
+          type: string
+          enum: [Critical, High, Medium, Low, Informational]
+        source: { type: string }
+        evidence: { type: string }
+        confidence: { type: ["number", "null"] }
         status:
           type: string
-      required:
-        - status
-
+          enum: [New, Investigating, Resolved, Dismissed]
+        eventIds:
+          type: array
+          items: { type: string }
+        simulated: { type: boolean }
+      required: [id, timestamp, title, category, severity, source, evidence, status, eventIds, simulated]
+    ThreatStatusUpdate:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [New, Investigating, Resolved, Dismissed]
+      required: [status]
+    ScanInput:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [quick, deep]
+      required: [type]
+    SecurityScan:
+      type: object
+      properties:
+        id: { type: string }
+        type:
+          type: string
+          enum: [quick, deep]
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+        progress: { type: integer, minimum: 0, maximum: 100 }
+        currentStage: { type: string }
+        startedAt: { type: string, format: date-time }
+        completedAt: { type: ["string", "null"], format: date-time }
+        threats: { type: integer }
+        anomalies: { type: integer }
+        warnings: { type: integer }
+        informational: { type: integer }
+        simulated: { type: boolean }
+        modelStatus: { type: string }
+      required: [id, type, status, progress, currentStage, startedAt, threats, anomalies, warnings, informational, simulated, modelStatus]
+    EndpointDevice:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        operatingSystem: { type: string }
+        connectionStatus:
+          type: string
+          enum: [online, recently_seen, offline]
+        lastSeen: { type: ["string", "null"], format: date-time }
+        agentVersion: { type: ["string", "null"] }
+        simulated: { type: boolean }
+      required: [id, name, operatingSystem, connectionStatus, simulated]
+    CyberguardOverview:
+      type: object
+      properties:
+        totalEvents: { type: integer }
+        activeThreats: { type: integer }
+        anomaliesToday: { type: integer }
+        failedLogins: { type: integer }
+        criticalEvents: { type: integer }
+        deviceStatus: { type: string }
+        modelStatus: { type: string }
+        lastScan: { type: ["string", "null"], format: date-time }
+        recentEvents:
+          type: array
+          items: { $ref: "#/components/schemas/SecurityEvent" }
+        recentThreats:
+          type: array
+          items: { $ref: "#/components/schemas/ThreatFinding" }
+        simulated: { type: boolean }
+      required: [totalEvents, activeThreats, anomaliesToday, failedLogins, criticalEvents, deviceStatus, modelStatus, recentEvents, recentThreats, simulated]
+    CyberguardAnalytics:
+      type: object
+      properties:
+        eventsByHour:
+          type: array
+          items:
+            type: object
+            properties:
+              hour: { type: string }
+              count: { type: integer }
+              anomalies: { type: integer }
+            required: [hour, count, anomalies]
+        severityCounts:
+          type: array
+          items:
+            type: object
+            properties:
+              severity: { type: string }
+              count: { type: integer }
+            required: [severity, count]
+        eventTypeCounts:
+          type: array
+          items:
+            type: object
+            properties:
+              eventType: { type: string }
+              count: { type: integer }
+            required: [eventType, count]
+        simulated: { type: boolean }
+      required: [eventsByHour, severityCounts, eventTypeCounts, simulated]
+    AssistantQuestion:
+      type: object
+      properties:
+        question: { type: string, minLength: 1, maxLength: 1000 }
+      required: [question]
+    AssistantAnswer:
+      type: object
+      properties:
+        answer: { type: string }
+        evidenceIds:
+          type: array
+          items: { type: string }
+        evidenceAvailable: { type: boolean }
+        simulated: { type: boolean }
+      required: [answer, evidenceIds, evidenceAvailable, simulated]

@@ -1,0 +1,1662 @@
+# Build a Full-Stack AI Cybersecurity Platform
+
+## Project Title
+
+**Cybersecurity Log Anomaly Detection System**
+
+Build a professional, production-style web application called:
+
+# **CyberGuard AI**
+
+Subtitle:
+
+**AI-Powered Cybersecurity Log Anomaly Detection & Endpoint Security Platform**
+
+This is an M.Tech AI/ML project. The application must demonstrate meaningful Machine Learning, Deep Learning, Explainable AI, cybersecurity log analysis, endpoint monitoring, anomaly detection, and an AI security assistant.
+
+Do NOT create a fake/static demo. Build a functional application with real backend APIs, database models, ML/DL pipelines, realistic sample data, and clear separation between frontend, backend, ML services, and endpoint-agent functionality.
+
+---
+
+# PHASE 1 — TECHNOLOGY STACK
+
+Use:
+
+### Frontend
+
+* React
+* TypeScript
+* Tailwind CSS
+* shadcn/ui or another clean component system
+* Recharts or equivalent charting library
+* Responsive desktop-first cybersecurity dashboard
+
+### Backend
+
+* Python
+* FastAPI
+* REST APIs
+* Pydantic
+* SQLAlchemy
+
+### Database
+
+Use PostgreSQL where available.
+
+For local/demo development, provide a SQLite fallback if PostgreSQL is unavailable.
+
+### Machine Learning
+
+* scikit-learn
+* XGBoost
+* pandas
+* NumPy
+* imbalanced-learn
+* SHAP
+
+### Deep Learning
+
+* TensorFlow
+* Keras
+
+### Security
+
+* Password hashing
+* JWT/session authentication
+* HTTPS-ready API design
+* Input validation
+* Rate limiting
+* CORS configuration
+* Never expose secrets/API keys in frontend code
+
+### Endpoint Agent
+
+Create a separate Python module/application that can run on Windows.
+
+It should collect only explicitly configured/authorized telemetry and logs.
+
+---
+
+# PHASE 2 — APPLICATION STRUCTURE
+
+Create this architecture:
+
+```text
+CyberGuard AI
+│
+├── Frontend
+│   ├── Dashboard
+│   ├── Scan Center
+│   ├── Log Analyzer
+│   ├── AI Assistant
+│   ├── Threats
+│   ├── Processes
+│   ├── Network
+│   ├── Login Security
+│   ├── Analytics
+│   ├── Reports
+│   ├── Device
+│   └── Settings
+│
+├── FastAPI Backend
+│   ├── Authentication
+│   ├── Devices
+│   ├── Logs
+│   ├── Scans
+│   ├── Threats
+│   ├── Processes
+│   ├── Network
+│   ├── ML Predictions
+│   ├── DL Predictions
+│   ├── SHAP Explanations
+│   ├── Reports
+│   └── AI Assistant
+│
+├── ML Engine
+│   ├── preprocessing
+│   ├── feature engineering
+│   ├── Isolation Forest
+│   ├── XGBoost
+│   ├── Random Forest baseline
+│   ├── SMOTE/ADASYN
+│   ├── PCA
+│   ├── UMAP
+│   ├── SHAP
+│   └── Ensemble
+│
+├── DL Engine
+│   ├── Autoencoder
+│   ├── LSTM
+│   ├── TensorFlow/Keras
+│   ├── training
+│   ├── inference
+│   └── evaluation
+│
+└── Endpoint Agent
+    ├── Windows Event Logs
+    ├── running processes
+    ├── network connections
+    ├── system information
+    └── authorized file metadata
+```
+
+---
+
+# PHASE 3 — AUTHENTICATION
+
+Create:
+
+### Login
+
+* Email/username
+* Password
+* Remember session
+* Logout
+
+### Registration
+
+* Name
+* Email
+* Password
+* Confirm password
+
+### User profile
+
+Store:
+
+* User ID
+* Name
+* Email
+* Created date
+
+Use secure password hashing.
+
+Never store plaintext passwords.
+
+---
+
+# PHASE 4 — MAIN DASHBOARD
+
+Create a professional SOC-style dashboard.
+
+Top section:
+
+```text
+CYBERGUARD AI
+
+Device Status: ● Protected
+Security Score: 87/100
+Last Scan: Today, 16:42
+```
+
+Create cards:
+
+### Security Score
+
+Example:
+
+**87 / 100**
+
+### Active Threats
+
+Example:
+
+**3**
+
+### Anomalies Today
+
+Example:
+
+**17**
+
+### Failed Logins
+
+Example:
+
+**24**
+
+### Suspicious Processes
+
+Example:
+
+**2**
+
+### Network Alerts
+
+Example:
+
+**4**
+
+### Recent Security Events
+
+Display:
+
+* Timestamp
+* Event ID
+* Type
+* Severity
+* Source
+* Status
+
+Severity:
+
+* Critical
+* High
+* Medium
+* Low
+* Informational
+
+---
+
+# PHASE 5 — SCAN CENTER
+
+Create a dedicated **Security Scan** page.
+
+Buttons:
+
+### QUICK SCAN
+
+Checks:
+
+* Recent security events
+* Authentication activity
+* Running processes
+* Network connections
+* Startup/persistence indicators where safely available
+* Recent suspicious activity
+
+### DEEP SCAN
+
+Performs a more extensive authorized analysis.
+
+Show real-time progress:
+
+```text
+Security Scan
+
+✓ System information
+✓ Security logs
+✓ Authentication events
+✓ Running processes
+✓ Network connections
+✓ ML anomaly detection
+✓ DL anomaly detection
+
+Scanning...
+73%
+```
+
+When complete:
+
+```text
+SCAN COMPLETE
+
+Threats: 2
+Anomalies: 8
+Warnings: 4
+Informational: 17
+```
+
+Do NOT claim to be a complete antivirus.
+
+Call this:
+
+**AI Security Scan**
+
+The system detects suspicious indicators and anomalies rather than claiming guaranteed malware removal.
+
+---
+
+# PHASE 6 — WINDOWS LOG COLLECTION
+
+Create an endpoint-agent concept.
+
+The website must have:
+
+**Connect Device**
+
+The endpoint agent should explicitly collect authorized information such as:
+
+* Windows Security Event Logs
+* System Event Logs
+* Application Event Logs
+* Login events
+* Process metadata
+* Network connection metadata
+
+Do not silently collect personal files or sensitive content.
+
+Provide:
+
+```text
+Device Connection
+
+1. Download Agent
+2. Install Agent
+3. Generate Device Token
+4. Connect Device
+```
+
+The agent sends data securely to FastAPI.
+
+If a real Windows environment is unavailable, create a simulator that generates realistic Windows-style events.
+
+---
+
+# PHASE 7 — LOG ANALYZER
+
+Create a page called:
+
+**Log Analyzer**
+
+Allow:
+
+### Upload
+
+* CSV
+* JSON
+* EVTX where supported by the local agent
+
+Also allow:
+
+**Analyze Live Device Logs**
+
+Display:
+
+* Total events
+* Normal events
+* Anomalies
+* Critical events
+* Failed logins
+* Successful logins
+* Unique IPs
+* Event frequency
+
+Create searchable/filterable table:
+
+```text
+Timestamp
+Event ID
+User
+Source IP
+Event Type
+Severity
+ML Score
+DL Score
+Status
+```
+
+---
+
+# PHASE 8 — FEATURE ENGINEERING
+
+Create a reusable feature pipeline.
+
+Possible features:
+
+* failed_login_count
+* successful_login_count
+* login_frequency
+* unique_source_ips
+* event_frequency
+* event_type_frequency
+* session_duration
+* unusual_hour
+* privilege_change_count
+* process_count
+* network_connection_count
+* unique_ports
+* source_ip_frequency
+* destination_ip_frequency
+
+Normalize/encode features where appropriate.
+
+Prevent data leakage.
+
+---
+
+# PHASE 9 — MACHINE LEARNING
+
+Implement the ML models according to the project's ML syllabus.
+
+## Model A — Isolation Forest
+
+Use for unsupervised anomaly detection.
+
+Output:
+
+```text
+anomaly_score
+is_anomaly
+```
+
+Use this as one of the primary anomaly detectors.
+
+---
+
+## Model B — XGBoost
+
+Use supervised classification when labeled training data is available.
+
+Classes can include:
+
+```text
+Normal
+Brute Force
+Port Scan
+DoS
+Botnet
+Other Attack
+```
+
+Do not hardcode these classes if the dataset uses different labels.
+
+Detect the dataset labels dynamically where possible.
+
+Output:
+
+```text
+predicted_class
+class_probability
+```
+
+---
+
+## Model C — Random Forest
+
+Use as a baseline model for comparison.
+
+---
+
+# PHASE 10 — CLASS IMBALANCE
+
+Implement:
+
+* SMOTE
+* ADASYN
+* Class weights
+
+Only apply oversampling to the training portion.
+
+Never leak test data into the training process.
+
+Display class distribution before and after resampling.
+
+---
+
+# PHASE 11 — DIMENSIONALITY REDUCTION
+
+Implement:
+
+### PCA
+
+Use for dimensionality reduction and visualization.
+
+### UMAP
+
+Use for nonlinear visualization where available.
+
+Create a page:
+
+**Feature Space**
+
+Display:
+
+* PCA 2D plot
+* UMAP 2D plot
+* Normal vs anomaly distribution
+* Attack-class distribution
+
+---
+
+# PHASE 12 — DEEP LEARNING AUTOENCODER
+
+Build a TensorFlow/Keras autoencoder.
+
+Architecture:
+
+```text
+Input
+ ↓
+Dense
+ ↓
+Dense
+ ↓
+Latent Representation
+ ↓
+Dense
+ ↓
+Dense
+ ↓
+Reconstruction
+```
+
+Train primarily on normal behavior when appropriate.
+
+Calculate reconstruction error.
+
+Use:
+
+```text
+low reconstruction error → normal-like
+high reconstruction error → anomaly candidate
+```
+
+Do not claim that reconstruction error alone proves malicious activity.
+
+Display:
+
+* Reconstruction error
+* Threshold
+* Anomaly status
+
+---
+
+# PHASE 13 — LSTM
+
+Build a TensorFlow/Keras LSTM model for sequential log behavior.
+
+Convert events into sequences.
+
+Example:
+
+```text
+4625 → 4625 → 4625 → 4624 → 4672
+```
+
+The LSTM should learn sequential patterns.
+
+Output:
+
+```text
+sequence_anomaly_score
+```
+
+Compare LSTM performance against the non-sequential baseline.
+
+---
+
+# PHASE 14 — MODEL ENSEMBLE
+
+Create an ensemble/risk engine.
+
+Combine:
+
+* Isolation Forest score
+* XGBoost probability
+* Autoencoder reconstruction score
+* LSTM sequence score
+
+Do not simply invent arbitrary weights.
+
+Provide configurable weights initially and create an experimental mechanism to tune/validate them using a validation dataset.
+
+Output:
+
+```text
+Overall Risk Score
+0–100
+```
+
+And:
+
+```text
+Risk Level:
+LOW
+MEDIUM
+HIGH
+CRITICAL
+```
+
+Clearly distinguish:
+
+**Model confidence**
+
+from
+
+**security severity**
+
+They are not the same thing.
+
+---
+
+# PHASE 15 — SHAP EXPLAINABILITY
+
+Implement SHAP for the tree-based model.
+
+When a detection occurs, show:
+
+### Why was this flagged?
+
+Example:
+
+```text
+Failed Login Count       +0.41
+Unique Source IPs       +0.27
+Login Frequency         +0.19
+Unusual Login Time      +0.11
+```
+
+Create:
+
+* Feature importance chart
+* Local explanation
+* Global explanation
+
+If SHAP cannot be calculated for a particular model, explain that clearly instead of fabricating an explanation.
+
+---
+
+# PHASE 16 — THREAT DETECTION
+
+Create a **Threat Center**.
+
+Categories:
+
+* Authentication anomaly
+* Brute-force-like activity
+* Port scanning indicator
+* Suspicious process behavior
+* Unusual network behavior
+* Privilege escalation indicator
+* Log anomaly
+* Unknown anomaly
+
+Every finding should contain:
+
+```text
+Threat ID
+Timestamp
+Severity
+Source
+Detection Model
+Evidence
+Confidence
+Recommended investigation
+Status
+```
+
+Statuses:
+
+* New
+* Investigating
+* Resolved
+* Dismissed
+
+---
+
+# PHASE 17 — PROCESS MONITOR
+
+Create:
+
+**Process Monitor**
+
+Display authorized process metadata:
+
+```text
+Process
+PID
+CPU
+Memory
+Executable path
+Start time
+User
+Risk indicator
+```
+
+Allow sorting and filtering.
+
+Do NOT automatically kill processes.
+
+Instead:
+
+**Investigate**
+
+should show available evidence.
+
+---
+
+# PHASE 18 — NETWORK MONITOR
+
+Create:
+
+**Network Monitor**
+
+Display available connection metadata:
+
+```text
+Local Address
+Local Port
+Remote Address
+Remote Port
+Protocol
+Process
+State
+Risk Indicator
+```
+
+Add:
+
+* Connection timeline
+* Most frequent remote addresses
+* Port distribution
+* Suspicious connection indicators
+
+Do not claim an IP is malicious solely because it is unusual.
+
+---
+
+# PHASE 19 — LOGIN SECURITY
+
+Create:
+
+**Login Security**
+
+Charts:
+
+* Successful logins
+* Failed logins
+* Failed login rate
+* Login time distribution
+* Source IP distribution
+
+Detect patterns such as:
+
+```text
+50 failed attempts
++
+1 successful login
++
+privileged activity
+```
+
+Flag this for investigation.
+
+---
+
+# PHASE 20 — REAL-TIME ALERTS
+
+Create an alert system.
+
+Example:
+
+```text
+🚨 HIGH
+
+Unusual authentication sequence detected.
+
+47 failed login events followed by a successful login.
+
+[Investigate]
+```
+
+Add:
+
+* Browser notification where permitted
+* Dashboard notification
+* Alert history
+* Severity filtering
+
+---
+
+# PHASE 21 — AI SECURITY CHATBOT
+
+Create:
+
+# CyberGuard AI Assistant
+
+The chatbot must NOT be a generic chatbot only.
+
+It should be context-aware.
+
+The AI should be able to use:
+
+* Current device status
+* Scan results
+* Detected anomalies
+* Security events
+* Threat findings
+* ML predictions
+* DL predictions
+* SHAP explanations
+* Network findings
+* Process findings
+* Previous investigation context
+
+Users can ask:
+
+```text
+Why was my computer flagged?
+
+What happened today?
+
+Show me suspicious login activity.
+
+Why was this event classified as anomalous?
+
+Which IP generated the most failed logins?
+
+Explain Event ID 4625.
+
+What changed compared with yesterday?
+
+What are my highest-risk findings?
+
+Explain this SHAP result.
+
+Generate a security summary.
+```
+
+The assistant should cite the underlying event/finding IDs inside the application where possible.
+
+It must never invent scan results.
+
+If information is unavailable:
+
+> "I don't have enough evidence from the collected telemetry to determine that."
+
+---
+
+# PHASE 22 — AI CHAT ACTIONS
+
+Allow safe actions such as:
+
+```text
+Show related events
+Open investigation
+Filter logs
+Show SHAP explanation
+Open scan result
+Generate report
+```
+
+Do NOT allow the chatbot to execute arbitrary shell commands.
+
+Do NOT allow unrestricted remote command execution.
+
+Do NOT allow automatic destructive actions.
+
+---
+
+# PHASE 23 — SECURITY REPORT
+
+Create:
+
+**Generate Security Report**
+
+Include:
+
+### Executive Summary
+
+### Device Information
+
+### Scan Information
+
+### Log Statistics
+
+### Detected Anomalies
+
+### Threat Findings
+
+### ML Results
+
+### DL Results
+
+### SHAP Explanation
+
+### Network Findings
+
+### Process Findings
+
+### Recommendations for investigation
+
+### Model Performance
+
+Allow export to PDF.
+
+---
+
+# PHASE 24 — ANALYTICS PAGE
+
+Create charts for:
+
+* Events over time
+* Anomalies over time
+* Threat severity
+* Attack classes
+* Failed login trends
+* Source IP frequency
+* Model scores
+* Reconstruction errors
+* LSTM anomaly scores
+* PCA
+* UMAP
+* Confusion matrix
+* ROC curve
+* Precision-Recall curve
+
+---
+
+# PHASE 25 — MODEL EVALUATION
+
+Create a dedicated:
+
+**Model Evaluation**
+
+page.
+
+Compare:
+
+```text
+Isolation Forest
+Random Forest
+XGBoost
+Autoencoder
+LSTM
+Hybrid/Ensemble
+```
+
+Metrics:
+
+* Accuracy
+* Precision
+* Recall
+* F1
+* ROC-AUC
+* PR-AUC
+* False Positive Rate
+* Detection latency
+
+Display confusion matrices.
+
+Where appropriate, support statistical comparison such as McNemar's test for classifier comparison.
+
+Do not fabricate results.
+
+If models have not been trained, show:
+
+"Not evaluated yet."
+
+---
+
+# PHASE 26 — DATASET MANAGEMENT
+
+Create:
+
+**Datasets**
+
+Allow authorized upload of:
+
+* CSV
+* JSON
+
+Show:
+
+* Number of rows
+* Features
+* Missing values
+* Class distribution
+* Duplicate rows
+* Outliers
+* Data types
+
+Create an automated preprocessing report.
+
+---
+
+# PHASE 27 — MODEL TRAINING CENTER
+
+Create:
+
+**Model Lab**
+
+Allow the user to:
+
+1. Select dataset
+2. Select target column
+3. Select model
+4. Configure parameters
+5. Train
+6. Evaluate
+7. Save model
+8. Deploy model
+
+Show training progress.
+
+For DL models display:
+
+* Training loss
+* Validation loss
+* Epoch
+* Learning rate
+
+Use TensorBoard-compatible logging for DL experiments where practical.
+
+---
+
+# PHASE 28 — HYPERPARAMETER TUNING
+
+Implement:
+
+### XGBoost
+
+Tune:
+
+* learning_rate
+* max_depth
+* n_estimators
+* subsample
+* colsample_bytree
+
+### Random Forest
+
+Tune:
+
+* n_estimators
+* max_depth
+* min_samples_split
+
+### LSTM
+
+Tune:
+
+* number of layers
+* units
+* dropout
+* batch size
+* learning rate
+
+### Autoencoder
+
+Tune:
+
+* latent dimension
+* learning rate
+* batch size
+* epochs
+
+Display experiment results.
+
+---
+
+# PHASE 29 — MODEL REGISTRY
+
+Create:
+
+**Models**
+
+Store:
+
+```text
+Model Name
+Version
+Algorithm
+Dataset
+Training Date
+Metrics
+Status
+```
+
+Statuses:
+
+* Training
+* Trained
+* Validated
+* Deployed
+* Archived
+
+---
+
+# PHASE 30 — DEVICE MANAGEMENT
+
+Create:
+
+**Devices**
+
+Display:
+
+```text
+Device Name
+Operating System
+Agent Version
+Last Seen
+Connection Status
+Security Score
+Last Scan
+```
+
+Status:
+
+🟢 Online
+
+🟡 Recently seen
+
+🔴 Offline
+
+---
+
+# PHASE 31 — SETTINGS
+
+Create:
+
+### Security Settings
+
+* Alert threshold
+* Scan schedule
+* Data retention
+
+### ML Settings
+
+* Detection sensitivity
+* Model selection
+* Ensemble settings
+
+### Device Settings
+
+* Log categories
+* Collection frequency
+
+### Account
+
+* Profile
+* Password
+* Logout
+
+Make data collection settings explicit and user-controlled.
+
+---
+
+# PHASE 32 — DATABASE
+
+Create appropriate tables/models:
+
+```text
+users
+devices
+logs
+scan_results
+threats
+alerts
+processes
+network_connections
+login_events
+models
+model_runs
+predictions
+shap_explanations
+datasets
+reports
+chat_sessions
+chat_messages
+```
+
+Use indexes for timestamps, device IDs, severity and event IDs.
+
+---
+
+# PHASE 33 — API DESIGN
+
+Create documented FastAPI endpoints.
+
+Examples:
+
+```text
+POST /auth/login
+POST /auth/register
+
+GET /devices
+POST /devices/connect
+
+POST /logs/upload
+GET /logs
+
+POST /scans/quick
+POST /scans/deep
+GET /scans/{id}
+
+GET /threats
+PATCH /threats/{id}
+
+GET /processes
+GET /network/connections
+GET /login-events
+
+POST /ml/predict
+POST /ml/train
+
+POST /dl/predict
+POST /dl/train
+
+GET /models
+GET /models/{id}
+
+GET /analytics
+POST /reports
+
+POST /assistant/chat
+```
+
+Add OpenAPI documentation automatically through FastAPI.
+
+---
+
+# PHASE 34 — DEMO MODE
+
+The project MUST work even without a connected Windows machine.
+
+Create:
+
+**Demo Mode**
+
+Generate realistic cybersecurity log data for demonstration.
+
+Example event types:
+
+```text
+Successful Login
+Failed Login
+Privilege Change
+Process Start
+Network Connection
+Port Activity
+File Access
+```
+
+Generate both:
+
+* Normal behavior
+* Suspicious/anomalous behavior
+
+Clearly label generated data as:
+
+**SIMULATED DATA**
+
+Never present simulated findings as real device findings.
+
+---
+
+# PHASE 35 — UI DESIGN
+
+Use a professional cybersecurity/SOC aesthetic.
+
+Dark theme by default.
+
+Main navigation:
+
+```text
+Dashboard
+Scan Center
+Log Analyzer
+Threat Center
+AI Assistant
+Processes
+Network
+Login Security
+Analytics
+Model Lab
+Models
+Datasets
+Reports
+Devices
+Settings
+```
+
+Use:
+
+* Clean cards
+* Charts
+* Tables
+* Status badges
+* Tooltips
+* Search
+* Filters
+* Pagination
+* Loading states
+* Empty states
+* Error states
+
+Avoid excessive animations.
+
+Make the interface look like a professional cybersecurity platform rather than a generic admin dashboard.
+
+---
+
+# PHASE 36 — RESPONSIVENESS
+
+The website must work on:
+
+* Desktop
+* Laptop
+* Tablet
+
+Optimize primarily for desktop because this is a cybersecurity monitoring platform.
+
+---
+
+# PHASE 37 — ERROR HANDLING
+
+Never allow backend errors to crash the frontend.
+
+Show useful messages.
+
+Example:
+
+```text
+Unable to analyze logs.
+
+Reason:
+The uploaded dataset does not contain the required features.
+
+Required:
+timestamp
+event_id
+source_ip
+```
+
+---
+
+# PHASE 38 — DATA PRIVACY
+
+The application must:
+
+* Require explicit device-agent installation
+* Require explicit log collection configuration
+* Avoid collecting personal file contents by default
+* Encrypt communication
+* Never expose API keys
+* Never log passwords
+* Never send raw logs to an external AI provider unless explicitly configured
+* Clearly distinguish real data from simulated data
+
+---
+
+# PHASE 39 — PROJECT DOCUMENTATION
+
+Create:
+
+```text
+README.md
+ARCHITECTURE.md
+ML_PIPELINE.md
+DL_PIPELINE.md
+API.md
+SECURITY.md
+SETUP.md
+```
+
+Document:
+
+* Architecture
+* Installation
+* Dataset format
+* Model training
+* API
+* Endpoint agent
+* ML methodology
+* DL methodology
+* Evaluation
+* Limitations
+
+---
+
+# PHASE 40 — IMPORTANT ACADEMIC REQUIREMENT
+
+This is an M.Tech AI/ML project.
+
+Do not make the project simply a UI wrapped around an API.
+
+The ML/DL pipeline must be genuinely implemented.
+
+The project must demonstrate:
+
+### Machine Learning
+
+* Isolation Forest
+* XGBoost
+* Random Forest baseline
+* SMOTE/ADASYN
+* PCA/UMAP
+* SHAP
+* Ensemble/stacking where justified
+
+### Deep Learning
+
+* TensorFlow
+* Keras
+* Autoencoder
+* LSTM
+* Hyperparameter tuning
+* Model evaluation
+* REST inference
+
+These technologies should be used because they have a role in the cybersecurity problem, not merely added as decorative features.
+
+---
+
+# PHASE 41 — DEVELOPMENT ORDER
+
+Do NOT attempt to build everything simultaneously.
+
+Implement in this exact order:
+
+## Step 1
+
+Create project architecture and repository structure.
+
+## Step 2
+
+Build frontend shell and navigation.
+
+## Step 3
+
+Build FastAPI backend.
+
+## Step 4
+
+Create database models.
+
+## Step 5
+
+Implement authentication.
+
+## Step 6
+
+Implement demo-mode cybersecurity logs.
+
+## Step 7
+
+Build Log Analyzer.
+
+## Step 8
+
+Implement feature engineering.
+
+## Step 9
+
+Implement Isolation Forest.
+
+## Step 10
+
+Implement Random Forest baseline.
+
+## Step 11
+
+Implement XGBoost.
+
+## Step 12
+
+Implement SMOTE/ADASYN.
+
+## Step 13
+
+Implement SHAP.
+
+## Step 14
+
+Implement PCA/UMAP visualization.
+
+## Step 15
+
+Implement TensorFlow/Keras Autoencoder.
+
+## Step 16
+
+Implement LSTM sequence detector.
+
+## Step 17
+
+Implement ensemble/risk engine.
+
+## Step 18
+
+Implement Scan Center.
+
+## Step 19
+
+Implement Threat Center.
+
+## Step 20
+
+Implement Process Monitor.
+
+## Step 21
+
+Implement Network Monitor.
+
+## Step 22
+
+Implement Login Security.
+
+## Step 23
+
+Implement AI Assistant.
+
+## Step 24
+
+Implement Reports.
+
+## Step 25
+
+Implement Model Lab.
+
+## Step 26
+
+Implement Dataset Management.
+
+## Step 27
+
+Implement Device Management.
+
+## Step 28
+
+Build Windows endpoint collector.
+
+## Step 29
+
+Connect real Windows telemetry to the backend.
+
+## Step 30
+
+Add security hardening.
+
+## Step 31
+
+Add tests.
+
+## Step 32
+
+Create final documentation.
+
+---
+
+# PHASE 42 — TESTING
+
+Create tests for:
+
+* Authentication
+* Log ingestion
+* Feature engineering
+* ML prediction
+* DL prediction
+* API endpoints
+* Database operations
+* Scan workflow
+* Alert generation
+* Chatbot context retrieval
+
+Also create sample test data.
+
+---
+
+# PHASE 43 — DO NOT FAKE RESULTS
+
+This is extremely important.
+
+Never hardcode:
+
+```text
+Accuracy = 98.7%
+F1 = 97%
+Security Score = 94
+```
+
+unless those values were actually calculated.
+
+If no model has been trained:
+
+```text
+Model not trained
+```
+
+If no device is connected:
+
+```text
+No live device connected
+```
+
+If demo data is being used:
+
+```text
+SIMULATED DATA
+```
+
+---
+
+# FINAL USER EXPERIENCE
+
+The final application should allow a user to:
+
+1. Register/login.
+2. Connect their authorized device or enter Demo Mode.
+3. Run a Quick or Deep AI Security Scan.
+4. Collect authorized cybersecurity logs.
+5. Analyze logs.
+6. Detect anomalies with Isolation Forest.
+7. Classify known attack patterns with XGBoost.
+8. Analyze sequences with LSTM.
+9. Detect reconstruction anomalies using an Autoencoder.
+10. Combine model signals into a validated risk score.
+11. Explain model predictions using SHAP.
+12. Explore suspicious processes.
+13. Explore network connections.
+14. Analyze login activity.
+15. Receive security alerts.
+16. Visualize anomalies and attacks.
+17. Ask the AI Security Assistant questions about actual findings.
+18. Investigate individual events.
+19. Generate a security report.
+20. Train and compare models.
+21. View model performance.
+22. Manage connected devices.
+
+The final product should feel like a **miniature AI-powered Security Operations Center (SOC) platform**, while remaining an academically defensible M.Tech ML/DL project.
+
+# FINAL RULE
+
+Prioritize correctness and functionality over adding fake features.
+
+If a feature cannot safely or reliably be implemented in a browser, implement it through the authorized endpoint agent and communicate with the backend through authenticated APIs.
+
+Never provide unrestricted remote shell execution, arbitrary destructive commands, silent surveillance, or automatic file deletion/quarantine.
+
+Build the project incrementally and ensure every phase runs before moving to the next phase.

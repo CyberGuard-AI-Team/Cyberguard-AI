@@ -1,0 +1,1 @@
+- [Clerk and React compatibility](react-clerk-compat.md) — keep peer-driven React patch updates local to the web artifact when the workspace catalog is shared.
