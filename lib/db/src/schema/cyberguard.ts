@@ -3,6 +3,7 @@ import {
   boolean,
   index,
   integer,
+  jsonb,
   pgTable,
   real,
   text,
@@ -26,6 +27,9 @@ export const securityEventsTable = pgTable(
     description: text("description").notNull(),
     simulated: boolean("simulated").notNull().default(false),
     anomalyScore: real("anomaly_score"),
+    agentId: text("agent_id"),
+    eventSource: text("event_source"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   },
   (table) => [
     index("security_events_owner_timestamp_idx").on(table.ownerId, table.timestamp),
@@ -122,3 +126,22 @@ export const insertEndpointDeviceSchema = createInsertSchema(
 ).omit({ id: true });
 export type InsertEndpointDevice = z.infer<typeof insertEndpointDeviceSchema>;
 export type EndpointDevice = typeof endpointDevicesTable.$inferSelect;
+
+export const monitoringAgentsTable = pgTable(
+  "monitoring_agents",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id").notNull(),
+    deviceId: text("device_id").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    os: text("os").notNull(),
+    version: text("version").notNull(),
+    status: text("status").notNull().default("online"),
+    config: jsonb("config").$type<Record<string, unknown>>().notNull().default({}),
+    lastHeartbeat: timestamp("last_heartbeat", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("monitoring_agents_owner_idx").on(table.ownerId)],
+);
+export type MonitoringAgent = typeof monitoringAgentsTable.$inferSelect;

@@ -9,8 +9,6 @@ import {
 } from "@workspace/db";
 import { makeDemoEvents } from "./cyberguard-demo";
 
-const seedJobs = new Map<string, Promise<void>>();
-
 export function toSecurityEvent(row: SecurityEvent) {
   return {
     id: row.id,
@@ -58,41 +56,6 @@ export function toThreatFinding(row: ThreatFinding) {
   };
 }
 
-export async function ensureDemoData(ownerId: string): Promise<void> {
-  const current = seedJobs.get(ownerId);
-  if (current) {
-    await current;
-    return;
-  }
-
-  const job = seedDemoData(ownerId);
-  seedJobs.set(ownerId, job);
-  try {
-    await job;
-  } finally {
-    seedJobs.delete(ownerId);
-  }
-}
-
-async function seedDemoData(ownerId: string): Promise<void> {
-  const [sample] = await db
-    .select({ id: securityEventsTable.id })
-    .from(securityEventsTable)
-    .where(
-      and(
-        eq(securityEventsTable.ownerId, ownerId),
-        eq(securityEventsTable.simulated, true),
-      ),
-    )
-    .limit(1);
-  if (sample) {
-    return;
-  }
-
-  await db.insert(securityEventsTable).values(makeDemoEvents(ownerId));
-  await detectBruteForceIndicators(ownerId);
-}
-
 export async function detectBruteForceIndicators(
   ownerId: string,
 ): Promise<number> {
@@ -106,9 +69,10 @@ export async function detectBruteForceIndicators(
   const groups = new Map<string, SecurityEvent[]>();
   for (const event of events) {
     if (event.eventType !== "Failed Login") continue;
-    const group = groups.get(event.sourceIp) ?? [];
+    const key = event.sourceIp || `user:${event.user}`;
+    const group = groups.get(key) ?? [];
     group.push(event);
-    groups.set(event.sourceIp, group);
+    groups.set(key, group);
   }
 
   let created = 0;
@@ -133,7 +97,7 @@ export async function detectBruteForceIndicators(
     const lastAt = burst[burst.length - 1]!.timestamp.getTime();
     const followup = events.filter(
       (event) =>
-        event.sourceIp === sourceIp &&
+        (event.sourceIp || `user:${event.user}`) === sourceIp &&
         event.timestamp.getTime() >= lastAt &&
         event.timestamp.getTime() <= lastAt + 60 * 60_000 &&
         (event.eventType === "Successful Login" ||
@@ -153,8 +117,9 @@ export async function detectBruteForceIndicators(
       (event) => event.eventType === "Privilege Change",
     );
     const simulated = evidenceEvents.every((event) => event.simulated);
-    const source = simulated ? "SIMULATED DATA · Endpoint simulator" : "Uploaded logs";
-    const evidence = `${burst.length} failed sign-in events from ${sourceIp} occurred within 15 minutes${succeeded ? ", followed by a successful sign-in" : ""}${privileged ? " and privileged activity" : ""}. This is a rule-based investigation indicator, not proof of compromise.`;
+    const source = simulated ? "SIMULATED DATA · Endpoint simulator" : "Collected telemetry";
+    const subject = sourceIp.startsWith("user:") ? `for ${sourceIp.slice(5)} (source address unavailable)` : `from ${sourceIp}`;
+    const evidence = `${burst.length} failed sign-in events ${subject} occurred within 15 minutes${succeeded ? ", followed by a successful sign-in" : ""}${privileged ? " and privileged activity" : ""}. This is a rule-based investigation indicator, not proof of compromise.`;
 
     const inserted = await db
       .insert(threatFindingsTable)

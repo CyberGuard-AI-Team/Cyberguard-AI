@@ -25,6 +25,7 @@ import {
 import {
   db,
   endpointDevicesTable,
+  monitoringAgentsTable,
   securityEventsTable,
   securityScansTable,
   threatFindingsTable,
@@ -34,7 +35,6 @@ import { logger } from "../lib/logger";
 import {
   createEventRows,
   detectBruteForceIndicators,
-  ensureDemoData,
   regenerateDemoData,
   toSecurityEvent,
   toThreatFinding,
@@ -64,7 +64,6 @@ function toScan(row: SecurityScan) {
 
 router.get("/cyberguard/overview", async (req, res): Promise<void> => {
   const ownerId = ownerIdFrom(req);
-  await ensureDemoData(ownerId);
   const [eventTotal] = await db
     .select({ value: count() })
     .from(securityEventsTable)
@@ -108,7 +107,7 @@ router.get("/cyberguard/overview", async (req, res): Promise<void> => {
   startOfToday.setHours(0, 0, 0, 0);
   const today = events.filter((event) => event.timestamp >= startOfToday);
   const devices = await db
-    .select({ id: endpointDevicesTable.id })
+    .select({ id: endpointDevicesTable.id, connectionStatus: endpointDevicesTable.connectionStatus, simulated: endpointDevicesTable.simulated, lastSeen: endpointDevicesTable.lastSeen })
     .from(endpointDevicesTable)
     .where(eq(endpointDevicesTable.ownerId, ownerId))
     .limit(1);
@@ -121,6 +120,7 @@ router.get("/cyberguard/overview", async (req, res): Promise<void> => {
   const simulated =
     Number(eventTotal?.value ?? 0) > 0 &&
     Number(eventTotal?.value ?? 0) === Number(simulatedEventTotal?.value ?? 0);
+  const liveDevices = devices.filter((device) => device.connectionStatus === "online" && !device.simulated && device.lastSeen && Date.now() - device.lastSeen.getTime() < 60_000);
   const response = GetCyberguardOverviewResponse.parse({
     totalEvents: Number(eventTotal?.value ?? 0),
     activeThreats: Number(activeTotal?.value ?? 0),
@@ -132,7 +132,7 @@ router.get("/cyberguard/overview", async (req, res): Promise<void> => {
     failedLogins: today.filter((event) => event.eventType === "Failed Login")
       .length,
     criticalEvents: today.filter((event) => event.severity === "Critical").length,
-    deviceStatus: devices.length === 0 ? "No live device connected" : "Device connected",
+    deviceStatus: liveDevices.length === 0 ? "No live device connected" : `${liveDevices.length} monitoring agent${liveDevices.length === 1 ? "" : "s"} connected`,
     modelStatus: "Not trained — ML/DL results are unavailable",
     lastScan: lastScan?.startedAt.toISOString() ?? null,
     recentEvents: events.slice(0, 7).map(toSecurityEvent),
@@ -149,7 +149,6 @@ router.get("/cyberguard/events", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  await ensureDemoData(ownerId);
   const rows = await db
     .select()
     .from(securityEventsTable)
@@ -194,7 +193,6 @@ router.post("/cyberguard/events/upload", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Each event must have a valid timestamp." });
     return;
   }
-  await ensureDemoData(ownerId);
   const accepted = await createEventRows(ownerId, parsed.data.events);
   const rejected = parsed.data.events.length - accepted;
   const simulated = parsed.data.events.every((event) => event.simulated === true);
@@ -210,7 +208,6 @@ router.post("/cyberguard/events/upload", async (req, res): Promise<void> => {
 
 router.get("/cyberguard/threats", async (req, res): Promise<void> => {
   const ownerId = ownerIdFrom(req);
-  await ensureDemoData(ownerId);
   const rows = await db
     .select()
     .from(threatFindingsTable)
@@ -251,7 +248,6 @@ router.patch("/cyberguard/threats/:threatId", async (req, res): Promise<void> =>
 
 router.get("/cyberguard/scans", async (req, res): Promise<void> => {
   const ownerId = ownerIdFrom(req);
-  await ensureDemoData(ownerId);
   const rows = await db
     .select()
     .from(securityScansTable)
@@ -268,7 +264,6 @@ router.post("/cyberguard/scans", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  await ensureDemoData(ownerId);
   const events = await db
     .select({ simulated: securityEventsTable.simulated })
     .from(securityEventsTable)
@@ -349,13 +344,16 @@ router.get("/cyberguard/devices", async (req, res): Promise<void> => {
     .where(eq(endpointDevicesTable.ownerId, ownerId))
     .orderBy(desc(endpointDevicesTable.lastSeen))
     .limit(100);
+  const agents = await db.select().from(monitoringAgentsTable).where(eq(monitoringAgentsTable.ownerId, ownerId));
+  const heartbeatByDevice = new Map(agents.map((agent) => [agent.deviceId, agent.revokedAt ? null : agent.lastHeartbeat]));
+  const now = Date.now();
   res.json(
     GetCyberguardDevicesResponse.parse(
       rows.map((row) => ({
         id: row.id,
         name: row.name,
         operatingSystem: row.operatingSystem,
-        connectionStatus: row.connectionStatus as
+        connectionStatus: (row.simulated ? row.connectionStatus : (() => { const beat = heartbeatByDevice.get(row.id)?.getTime(); return beat && now - beat < 60_000 ? "online" : beat && now - beat < 5 * 60_000 ? "recently_seen" : "offline"; })()) as
           | "online"
           | "recently_seen"
           | "offline",
@@ -369,7 +367,6 @@ router.get("/cyberguard/devices", async (req, res): Promise<void> => {
 
 router.get("/cyberguard/analytics", async (req, res): Promise<void> => {
   const ownerId = ownerIdFrom(req);
-  await ensureDemoData(ownerId);
   const rows = await db
     .select()
     .from(securityEventsTable)
@@ -422,7 +419,6 @@ router.post("/cyberguard/assistant/chat", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  await ensureDemoData(ownerId);
   const question = parsed.data.question.trim();
   const [events, threats] = await Promise.all([
     db
