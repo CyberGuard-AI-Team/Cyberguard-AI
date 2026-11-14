@@ -50,7 +50,10 @@ div[data-testid="stMetric"] { background:linear-gradient(145deg,#19232d,#151e27)
 div[data-testid="stMetricLabel"] p { color:var(--cg-muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em; }
 div[data-testid="stMetricValue"] { font-weight:800; }
 .stButton button[kind="primary"] { background:#56d7b7;border:0;color:#101720;font-weight:800; }
-.stButton button { border-radius:9px; }
+.stButton button { border-radius:9px;transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease; }
+.stButton button:hover { transform:translateY(-1px);box-shadow:0 8px 24px #0004;border-color:#56d7b766; }
+[data-testid="stTabs"] button[aria-selected="true"] { color:var(--cg-teal); }
+[data-testid="stDataFrame"] { border:1px solid var(--cg-border);border-radius:10px;overflow:hidden; }
 footer { visibility:hidden; }
 </style>
 """, unsafe_allow_html=True)
@@ -99,6 +102,20 @@ def findings_from_events(events: list[dict]) -> list[dict]:
     return findings
 
 
+def set_page(page: str) -> None:
+    st.session_state.workspace_page = page
+
+
+def in_window(event: dict, window: str) -> bool:
+    if window == "All records":
+        return True
+    hours = 24 if window == "Past 24 hours" else 24 * 7
+    stamp = event["timestamp"]
+    if not isinstance(stamp, datetime):
+        stamp = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+    return stamp >= datetime.now(timezone.utc) - timedelta(hours=hours)
+
+
 if "events" not in st.session_state:
     st.session_state.events = make_demo_events()
 if "findings" not in st.session_state:
@@ -117,7 +134,7 @@ active_findings = sum(f["status"] in ("New", "Investigating") for f in findings)
 with st.sidebar:
     st.markdown('<div class="cg-brand">CYBERGUARD<span> AI</span></div><div class="cg-eyebrow">SOC workbench / M.Tech</div>', unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
-    page = st.radio("WORKSPACE", NAV, label_visibility="visible")
+    page = st.radio("WORKSPACE", NAV, label_visibility="visible", key="workspace_page")
     st.markdown("---")
     st.markdown("<div class='cg-eyebrow'>API / LOCAL DEMO</div><p style='font-size:12px;color:#56d7b7'>● Sample workspace ready</p><p style='font-size:11px;color:#96a6ac'>Model state: not trained / not evaluated</p>", unsafe_allow_html=True)
     if st.button("↻  Reset simulated data", use_container_width=True):
@@ -142,17 +159,25 @@ def event_table(rows: list[dict], key: str) -> None:
 
 
 if page == "Overview":
-    today = datetime.now(timezone.utc).date()
-    anomalies = sum(e["severity"] in ("High", "Critical") for e in events if e["timestamp"].date() == today)
-    failed = sum(e["eventType"] == "Failed Login" for e in events)
-    critical = sum(e["severity"] == "Critical" for e in events)
+    filter_col, _ = st.columns([1, 3])
+    with filter_col:
+        window = st.radio("Time range", ["Past 24 hours", "Past 7 days", "All records"], horizontal=True, label_visibility="collapsed", key="overview_window")
+    visible_events = [e for e in events if in_window(e, window)]
+    anomalies = sum(e["severity"] in ("High", "Critical") for e in visible_events)
+    failed = sum(e["eventType"] == "Failed Login" for e in visible_events)
+    critical = sum(e["severity"] == "Critical" for e in visible_events)
     cols = st.columns(4)
-    for col, label, value, detail in zip(cols, ["Events stored", "Active findings", "Anomalies today", "Failed logins"], [len(events), active_findings, anomalies, failed], ["All ingested records", "Open investigation states", "High / critical records", "Stored event count"]):
+    for col, label, value, detail in zip(cols, ["Events in range", "Active findings", "High / critical", "Failed logins"], [len(visible_events), active_findings, anomalies, failed], [window, "Open investigation states", "In selected range", "In selected range"]):
         col.markdown(f"<div class='cg-metric'><div class='cg-metric-label'>{label}</div><div class='cg-metric-value'>{value}</div><div class='cg-metric-detail'>{detail}</div></div>", unsafe_allow_html=True)
+    st.markdown("<div class='cg-eyebrow' style='margin:18px 0 8px'>QUICK ACTIONS</div>", unsafe_allow_html=True)
+    actions = st.columns(3)
+    actions[0].button("⌕  Review event log", use_container_width=True, on_click=set_page, args=("Event review",))
+    actions[1].button("◉  Open scan lab", type="primary", use_container_width=True, on_click=set_page, args=("Scans",))
+    actions[2].button("▥  Explore analytics", use_container_width=True, on_click=set_page, args=("Analytics",))
     a, b = st.columns([1.45, 1])
     with a:
-        st.subheader("Recent stored events")
-        event_table(events[:5], "overview-events")
+        st.subheader(f"Recent events · {window.lower()}")
+        event_table(visible_events[:5], "overview-events")
     with b:
         st.subheader("Investigation queue")
         if findings:
@@ -167,7 +192,7 @@ if page == "Overview":
     st.caption("Last scan: " + (st.session_state.scans[0]["started"] if st.session_state.scans else "Not available") + " · All current sample records are simulated.")
 
 elif page == "Event review":
-    st.caption("Search imported telemetry and inspect evidence. Uploaded sources are not independently verified.")
+    st.caption("Search stored telemetry, narrow the view, and select a row to inspect its full evidence record.")
     upcol, flagcol = st.columns([1, 2])
     with upcol:
         upload = st.file_uploader("Upload CSV / JSON", type=["csv", "json"])
@@ -202,12 +227,29 @@ elif page == "Event review":
             st.rerun()
         except Exception as exc:
             st.error(f"Upload not imported: {exc}")
-    controls = st.columns([3, 1])
+    controls = st.columns([3, 1, 1, 1.5])
     query = controls[0].text_input("Search event IDs, actors, IPs, or evidence", placeholder="e.g. 198.51.100.23")
     sev = controls[1].selectbox("Severity", ["All severities"] + SEVERITIES)
-    subset = [e for e in events if (sev == "All severities" or e["severity"] == sev) and (not query or query.lower() in " ".join(str(e.get(k, "")) for k in ("eventId", "eventType", "user", "sourceIp", "description")).lower())]
+    source = controls[2].selectbox("Record source", ["All records", "Simulated", "Non-simulated"])
+    event_types = sorted({e["eventType"] for e in events})
+    selected_types = controls[3].multiselect("Event types", event_types, placeholder="All event types")
+    subset = [e for e in events if (sev == "All severities" or e["severity"] == sev) and (source == "All records" or e["simulated"] == (source == "Simulated")) and (not selected_types or e["eventType"] in selected_types) and (not query or query.lower() in " ".join(str(e.get(k, "")) for k in ("eventId", "eventType", "user", "sourceIp", "description")).lower())]
     st.caption(f"{len(subset)} matching records · up to 200 displayed")
-    event_table(subset[:200], "event-review-table")
+    if subset:
+        frame = pd.DataFrame(subset[:200]).copy()
+        frame["timestamp"] = frame["timestamp"].map(lambda x: x.astimezone(timezone.utc).strftime("%b %d, %Y %H:%M UTC") if isinstance(x, datetime) else str(x))
+        frame = frame.rename(columns={"eventId": "Event ID", "timestamp": "Time", "eventType": "Type", "user": "Actor", "sourceIp": "Source IP", "severity": "Severity", "status": "Status", "description": "Evidence", "simulated": "Simulated"})
+        selection = st.dataframe(frame[["Event ID", "Time", "Type", "Actor", "Source IP", "Severity", "Status", "Evidence", "Simulated"]], use_container_width=True, hide_index=True, key="event-review-table", on_select="rerun", selection_mode="single-row", height=430)
+        selected_rows = selection.selection.rows
+        if selected_rows:
+            chosen = subset[selected_rows[0]]
+            st.markdown(f"#### Selected event · `{chosen['eventId']}`")
+            st.caption(f"{chosen['eventType']} · {chosen['severity']} · {'Simulated' if chosen['simulated'] else 'User-provided / collected'}")
+            st.write(chosen["description"])
+            with st.expander("Full event details"):
+                st.json({k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in chosen.items()})
+    else:
+        st.info("No events match these filters. Clear a filter or change the search.")
     st.download_button("Download current events as CSV", pd.DataFrame(subset).to_csv(index=False), "cyberguard-events.csv", "text/csv")
 
 elif page == "Scans":
@@ -308,21 +350,32 @@ elif page == "Findings":
                 st.code("\n".join(finding["eventIds"]), language=None)
 
 elif page == "Analytics":
-    st.caption("Aggregates from the event records in this browser session. Uploaded sources are not independently verified.")
-    df = pd.DataFrame(events)
-    cols = st.columns(4)
-    for col, label, val in zip(cols, ["Total events", "High / critical", "Unique actors", "Unique source IPs"], [len(events), int(df["severity"].isin(["High", "Critical"]).sum()), df["user"].nunique(), df["sourceIp"].nunique()]):
-        col.metric(label, val)
-    a, b = st.columns(2)
-    with a:
-        st.subheader("Events by severity")
-        st.bar_chart(df["severity"].value_counts().reindex(SEVERITIES, fill_value=0), color="#56d7b7")
-    with b:
-        st.subheader("Events by type")
-        st.bar_chart(df["eventType"].value_counts().head(8), color="#56d7b7")
-    hourly = df.assign(hour=df["timestamp"].map(lambda d: d.strftime("%H:00"))).groupby("hour").size().sort_index()
-    st.subheader("Stored event volume by hour (UTC)")
-    st.line_chart(hourly, color="#56d7b7")
+    st.caption("Explore the stored records with interactive time and severity filters. Uploaded sources are not independently verified.")
+    f1, f2 = st.columns([1, 2])
+    window = f1.radio("Time range", ["Past 24 hours", "Past 7 days", "All records"], horizontal=True, label_visibility="collapsed", key="analytics_window")
+    selected_severities = f2.multiselect("Severities", SEVERITIES, default=SEVERITIES, placeholder="Choose severities")
+    filtered_events = [e for e in events if in_window(e, window) and e["severity"] in selected_severities]
+    if not filtered_events:
+        st.info("No records match this time range and severity selection.")
+    else:
+        df = pd.DataFrame(filtered_events)
+        cols = st.columns(4)
+        for col, label, val in zip(cols, ["Events in view", "High / critical", "Unique actors", "Unique source IPs"], [len(filtered_events), int(df["severity"].isin(["High", "Critical"]).sum()), df["user"].nunique(), df["sourceIp"].replace("", pd.NA).nunique()]):
+            col.metric(label, val)
+        severity_tab, type_tab, activity_tab = st.tabs(["Severity breakdown", "Event types", "Activity timeline"])
+        with severity_tab:
+            counts = df["severity"].value_counts().reindex(SEVERITIES, fill_value=0)
+            st.bar_chart(counts, color="#56d7b7")
+            st.caption("Select a time range and severity above to update this chart.")
+        with type_tab:
+            type_counts = df["eventType"].value_counts().head(10)
+            st.bar_chart(type_counts, color="#56d7b7")
+            st.dataframe(type_counts.rename("Records").to_frame(), use_container_width=True)
+        with activity_tab:
+            df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+            hourly = df.set_index("timestamp").resample("1h").size().rename("Events").to_frame()
+            st.line_chart(hourly, color="#56d7b7")
+            st.caption("Hourly totals are shown in UTC. Hover over the plot to inspect values.")
 
 elif page == "Assistant":
     st.caption("Answers are derived only from currently stored records. This is a simple evidence lookup, not an evaluated ML model.")
