@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 from sklearn.ensemble import IsolationForest
 
 
@@ -173,6 +174,35 @@ def local_db() -> sqlite3.Connection:
     return conn
 
 
+def browser_case_workspace(findings: list[dict]) -> None:
+    """Host a browser-local investigation workspace without transmitting case notes."""
+    cases = [{"id": f"case-{finding['id']}", "title": finding["title"], "summary": finding.get("plain_summary", finding["evidence"])} for finding in findings]
+    payload = json.dumps(cases).replace("</", "<\\/")
+    markup = f'''<!doctype html><html><head><style>
+      * {{ box-sizing:border-box }} body {{ margin:0;background:#101720;color:#dce6e8;font-family:system-ui,sans-serif }}
+      .toolbar,.case {{ border:1px solid #2b3946;background:#171f29;border-radius:12px;padding:15px;margin-bottom:12px }}
+      h3 {{ margin:0 0 6px;font-size:16px }} p,label {{ color:#aebdc2;font-size:13px }}
+      .grid {{ display:grid;grid-template-columns:150px 1fr;gap:10px;margin-top:12px }}
+      input,select,textarea {{ width:100%;background:#101720;color:#dce6e8;border:1px solid #41515e;border-radius:7px;padding:8px;font:inherit }}
+      textarea {{ min-height:80px;resize:vertical }} button {{ background:#56d7b7;color:#101720;border:0;border-radius:8px;padding:9px 12px;font-weight:700;cursor:pointer }}
+      .muted {{ color:#96a6ac;font-size:12px }} @media(max-width:560px) {{ .grid {{ grid-template-columns:1fr }} }}
+    </style></head><body><div class="toolbar"><b>Investigation workspace</b><p>Cases are saved in this browser. Export the report when you are done.</p><button id="export">Download case report (CSV)</button></div><div id="cases"></div>
+    <script>
+      const seed = {payload}; const key = 'cyberguard-investigations-v1';
+      const saved = JSON.parse(localStorage.getItem(key) || '{{}}');
+      seed.forEach(item => {{ if (!saved[item.id]) saved[item.id] = {{...item, status:'New', owner:'Unassigned', notes:'', updated:''}}; }});
+      const persist = () => localStorage.setItem(key, JSON.stringify(saved));
+      const esc = value => String(value || '').replace(/[&<>"']/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
+      function render() {{
+        document.querySelector('#cases').innerHTML = Object.values(saved).map(item => `<section class="case"><h3>${{esc(item.title)}}</h3><p>${{esc(item.summary)}}</p><div class="grid"><label>Case status<select data-id="${{item.id}}" data-field="status">${{['New','Investigating','Resolved','Dismissed'].map(x=>`<option ${{x===item.status?'selected':''}}>${{x}}</option>`).join('')}}</select></label><label>Assigned to<input data-id="${{item.id}}" data-field="owner" value="${{esc(item.owner)}}"></label></div><label>Investigation notes<textarea data-id="${{item.id}}" data-field="notes" placeholder="What did you check? What happens next?">${{esc(item.notes)}}</textarea></label><p class="muted">Last saved: ${{item.updated || 'Not yet saved'}}</p></section>`).join('');
+        document.querySelectorAll('[data-field]').forEach(el => el.addEventListener('input', event => {{ const item=saved[event.target.dataset.id]; item[event.target.dataset.field]=event.target.value; item.updated=new Date().toLocaleString('en-IN'); persist(); render(); }}));
+      }}
+      document.querySelector('#export').addEventListener('click', () => {{ const rows=[['Case ID','Finding','Status','Assigned to','Notes','Updated'],...Object.values(saved).map(x=>[x.id,x.title,x.status,x.owner,x.notes,x.updated])]; const csv=rows.map(row=>row.map(x=>'"'+String(x).replaceAll('"','""')+'"').join(',')).join('\n'); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{{type:'text/csv'}})); a.download='cyberguard-investigations.csv'; a.click(); }});
+      render();
+    </script></body></html>'''
+    components.html(markup, height=max(280, 235 * len(cases) + 110), scrolling=True)
+
+
 if "events" not in st.session_state:
     st.session_state.events = make_demo_events()
 if "findings" not in st.session_state:
@@ -201,8 +231,7 @@ with st.sidebar:
         st.rerun()
     st.markdown("<br><div class='cg-eyebrow'>CYBERGUARD / 0.1<br>LOCAL LAB</div>", unsafe_allow_html=True)
 
-st.markdown(f"<div class='cg-eyebrow'>CYBERGUARD / WORKSPACE</div><h1 style='margin:.15rem 0 .2rem'>{page if page != 'Overview' else 'Security posture'}</h1><div style='color:#96a6ac;font-size:13px'>Stored telemetry review · no live monitoring</div>", unsafe_allow_html=True)
-st.markdown("<div class='cg-notice'>⚑ &nbsp; <b>STORED TELEMETRY</b> &nbsp;/&nbsp; Sample records are simulated. No live endpoint is connected; no model performance claims are available.</div>", unsafe_allow_html=True)
+st.markdown(f"<div class='cg-eyebrow'>CYBERGUARD / WORKSPACE</div><h1 style='margin:.15rem 0 .2rem'>{page if page != 'Overview' else 'Security posture'}</h1><div style='color:#96a6ac;font-size:13px'>Security operations analytics workspace</div>", unsafe_allow_html=True)
 
 
 def event_table(rows: list[dict], key: str) -> None:
@@ -246,7 +275,7 @@ if page == "Overview":
     q1.metric("Critical event count", critical, "Stored severity aggregate")
     q2.metric("Endpoint readiness", "No live device", "No agent heartbeat received")
     q3.metric("Model state", "Not evaluated", "No accuracy claim is made")
-    st.caption("Last scan: " + (st.session_state.scans[0]["started"] if st.session_state.scans else "Not available") + " · Time zone: IST (UTC+05:30). Sample records are simulated.")
+    st.caption("Last scan: " + (st.session_state.scans[0]["started"] if st.session_state.scans else "Not available") + " · Time zone: IST (UTC+05:30).")
 
 elif page == "Event review":
     st.caption("Search stored telemetry, narrow the view, and select a row to inspect its full evidence record.")
@@ -408,9 +437,9 @@ elif page == "Findings":
                 st.code("\n".join(finding["eventIds"]), language=None)
 
 elif page == "Investigations":
-    st.caption("Track follow-up locally. Notes and case status stay in this app's local SQLite file when run on your PC.")
+    st.caption("Track findings, assign ownership, record investigation notes, and export case reports.")
     if os.name != "nt":
-        st.warning("The hosted site cannot store private investigation notes for your PC. Run the project locally on Windows to use local case storage.")
+        browser_case_workspace(findings)
     else:
         conn = local_db()
         for finding in findings:
@@ -594,4 +623,4 @@ ConvertTo-Json -InputObject @($output) -Depth 4 -Compress
     st.markdown("### Live monitoring")
     st.write("This is a one-time collection. It does not run in the background, stream events continuously, or take response actions.")
 
-st.markdown("<hr style='border-color:#2b3946;margin-top:30px'><div class='cg-eyebrow'>CYBERGUARD AI · EDUCATIONAL M.TECH SOC WORKBENCH · SAMPLE DATA IS SIMULATED</div>", unsafe_allow_html=True)
+st.markdown("<hr style='border-color:#2b3946;margin-top:30px'><div class='cg-eyebrow'>CYBERGUARD AI · M.TECH CYBERSECURITY ANALYTICS WORKBENCH</div>", unsafe_allow_html=True)
