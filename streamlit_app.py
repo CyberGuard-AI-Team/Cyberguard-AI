@@ -3,6 +3,9 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
+import re
+import subprocess
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -104,6 +107,8 @@ if "scans" not in st.session_state:
     st.session_state.scans = []
 if "chat" not in st.session_state:
     st.session_state.chat = []
+if "local_collection_meta" not in st.session_state:
+    st.session_state.local_collection_meta = None
 
 events: list[dict] = st.session_state.events
 findings: list[dict] = st.session_state.findings
@@ -353,11 +358,67 @@ elif page == "Assistant":
     st.info("Boundaries: stored context only · citations are event IDs, not proof of causality · model not trained or evaluated · no live endpoint actions.")
 
 elif page == "Devices":
-    st.caption("Endpoint inventory and agent heartbeat status. This Streamlit demo has no monitoring API connection.")
-    st.warning("No live device is connected. The original Node API agent-enrollment workflow is not connected to this Streamlit port.")
-    st.subheader("Registered devices")
-    st.info("No device records. Connect and enroll an agent through the original CyberGuard API to collect host telemetry.")
-    st.markdown("### Readiness, not protection")
-    st.write("No live telemetry, enforcement, agent heartbeat, or production security guarantee is represented by this demo app.")
+    st.caption("One-time local Windows Event Log collection. No log data is sent to CyberGuard cloud services.")
+    if os.name == "nt":
+        st.success("Local Windows mode · PowerShell reads this PC's event logs and keeps results in this local app session.")
+        st.warning("Security event access may require running the local app as Administrator. Collection is limited to selected event types and a recent time window.")
+        days_back = st.select_slider("Look back", options=[1, 2, 3, 7], value=1, format_func=lambda d: f"{d} day" if d == 1 else f"{d} days")
+        if st.button("Collect Windows logs on this PC", type="primary"):
+            ps = r'''
+$ErrorActionPreference = 'SilentlyContinue'
+$since = [DateTime]::UtcNow.AddDays(-__DAYS__)
+$output = [System.Collections.Generic.List[object]]::new()
+$labels = @{4624='Successful Login';4625='Failed Login';4672='Privilege Change';4688='Process Start';4697='Service Install'}
+foreach ($channel in @('Security','System','Application')) {
+  if ($channel -eq 'Security') {
+    $filter = @{LogName=$channel; StartTime=$since; Id=@(4624,4625,4672,4688,4697)}
+  } else {
+    $filter = @{LogName=$channel; StartTime=$since; Level=@(1,2)}
+  }
+  $items = @(Get-WinEvent -FilterHashtable $filter -MaxEvents 500 -ErrorAction SilentlyContinue)
+  foreach ($event in $items) {
+    $message = [string]$event.Message
+    if ($message.Length -gt 1800) { $message = $message.Substring(0,1800) }
+    $ip = [regex]::Match($message, '(?<![0-9])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![0-9])').Value
+    $severity = if ($event.Id -eq 4625 -or $event.Id -eq 4697) {'Medium'} elseif ($event.Id -eq 4672) {'High'} elseif ($event.Id -eq 4688) {'Informational'} elseif ($event.Level -eq 1) {'Critical'} elseif ($event.Level -eq 2) {'High'} else {'Low'}
+    $type = if ($labels.ContainsKey([int]$event.Id)) {$labels[[int]$event.Id]} elseif ($channel -eq 'System') {'System Event'} else {'Application Event'}
+    $user = if ($event.UserId) {$event.UserId.Value} else {'unknown'}
+    $status = if ($event.Id -eq 4625) {'Failed'} elseif ($event.Id -eq 4624) {'Success'} else {'Observed'}
+    $output.Add([pscustomobject]@{timestamp=$event.TimeCreated.ToUniversalTime().ToString('o'); eventId=[string]$event.Id; eventType=$type; user=$user; sourceIp=$ip; destinationIp=''; severity=$severity; status=$status; description=$message; source=$channel; simulated=$false; provider=[string]$event.ProviderName; computer=[string]$event.MachineName})
+  }
+}
+ConvertTo-Json -InputObject @($output) -Depth 4 -Compress
+'''.replace("__DAYS__", str(int(days_back)))
+            try:
+                result = subprocess.run(["powershell.exe", "-NoLogo", "-NoProfile", "-Command", ps], capture_output=True, text=True, timeout=90, check=False)
+                if result.returncode != 0 or not result.stdout.strip():
+                    raise RuntimeError("PowerShell could not read the selected event logs. Try running this local app as Administrator.")
+                raw_events = json.loads(result.stdout)
+                if isinstance(raw_events, dict):
+                    raw_events = [raw_events]
+                collected = []
+                for raw in raw_events:
+                    stamp = datetime.fromisoformat(raw["timestamp"].replace("Z", "+00:00"))
+                    collected.append({**raw, "id": f"local-{uuid.uuid4().hex[:10]}", "timestamp": stamp.astimezone(timezone.utc), "simulated": False})
+                st.session_state.local_collection_meta = {"count": len(collected), "days": days_back, "channels": sorted({e.get("source", "") for e in collected if e.get("source")})}
+                if collected:
+                    st.session_state.events = sorted(collected, key=lambda e: e["timestamp"], reverse=True)
+                    st.session_state.findings = findings_from_events(st.session_state.events)
+                    st.success(f"Collected {len(collected)} local event records from {', '.join(st.session_state.local_collection_meta['channels'])}. Records remain in this local app session.")
+                else:
+                    st.info("No matching events were found in that time window, or Windows denied access. No records were added.")
+            except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError, KeyError, RuntimeError) as exc:
+                st.error(str(exc) if isinstance(exc, RuntimeError) else "Local collection failed. Confirm PowerShell is available and try running the app as Administrator.")
+        if st.session_state.local_collection_meta:
+            meta = st.session_state.local_collection_meta
+            st.caption(f"Last local collection: {meta['count']} event records · past {meta['days']} day(s) · {', '.join(meta['channels']) or 'no accessible channels'} · held in local session only")
+        st.markdown("### Data handling")
+        st.write("The collector uses Windows PowerShell's Get-WinEvent on this computer. It does not upload, persist, or transmit the records. Closing the local app session clears them.")
+    else:
+        st.warning("This page is running on Streamlit Community Cloud, a remote Linux server. It cannot read your Windows Event Logs. For local-only collection, run a copy of this repository on your Windows PC.")
+        st.markdown("1. [Download the project ZIP](https://github.com/vaibhavrxj/Cyberguard-AI/archive/refs/heads/main.zip) and extract it.\n2. Install Python 3.10 or newer if needed.\n3. Open PowerShell in the extracted folder and run:\n   `py -m pip install -r requirements.txt`\n   `py -m streamlit run streamlit_app.py --server.address 127.0.0.1`\n4. Open `http://127.0.0.1:8501`, then choose **Devices** → **Collect Windows logs on this PC**. The local app does not send log data to the hosted site.")
+        st.caption("Selected records: Windows Security sign-in / privilege / process / service events (IDs 4624, 4625, 4672, 4688, 4697), plus System and Application warnings/errors. Maximum 500 records per channel.")
+    st.markdown("### Live monitoring")
+    st.write("This is a one-time collection. It does not run in the background, stream events continuously, or take response actions.")
 
 st.markdown("<hr style='border-color:#2b3946;margin-top:30px'><div class='cg-eyebrow'>CYBERGUARD AI · EDUCATIONAL M.TECH SOC WORKBENCH · SAMPLE DATA IS SIMULATED</div>", unsafe_allow_html=True)
