@@ -1,0 +1,295 @@
+from __future__ import annotations
+
+import csv
+import io
+import json
+import uuid
+from datetime import datetime, timedelta, timezone
+
+import pandas as pd
+import streamlit as st
+
+
+st.set_page_config(page_title="CyberGuard AI | SOC Workbench", page_icon="🛡️", layout="wide")
+
+NAV = ["Overview", "Scans", "Event review", "Findings", "Analytics", "Assistant", "Devices"]
+SEVERITIES = ["Critical", "High", "Medium", "Low", "Informational"]
+COLORS = {"Critical": "#fb7185", "High": "#fb923c", "Medium": "#fbbf24", "Low": "#56d7b7", "Informational": "#94a3b8"}
+
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap');
+:root { --cg-bg:#101720; --cg-panel:#171f29; --cg-border:#2b3946; --cg-teal:#56d7b7; --cg-muted:#96a6ac; }
+html, body, [class*="css"] { font-family:Manrope, sans-serif; }
+.stApp { background:radial-gradient(ellipse at 78% -12%,#18352f 0,transparent 35%),var(--cg-bg); color:#dce6e8; }
+section[data-testid="stSidebar"] { background:#121a23; border-right:1px solid var(--cg-border); }
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { color:#dce6e8; }
+h1,h2,h3 { letter-spacing:-.04em; }
+.cg-brand { font-size:16px;font-weight:800;letter-spacing:-.04em; }
+.cg-brand span { color:var(--cg-teal); }
+.cg-eyebrow { color:var(--cg-muted);font-size:10px;font-weight:800;letter-spacing:.13em;text-transform:uppercase; }
+.cg-notice { border:1px solid #fbbf2430;background:#fbbf240b;color:#f5d98e;border-radius:10px;padding:12px 15px;font-size:12px;margin:4px 0 22px; }
+.cg-card { background:linear-gradient(145deg,#19232d,#151e27);border:1px solid var(--cg-border);border-radius:14px;padding:18px 20px;margin-bottom:12px; }
+.cg-metric { background:linear-gradient(145deg,#19232d,#151e27);border:1px solid var(--cg-border);border-radius:14px;padding:18px 20px;min-height:125px; }
+.cg-metric-label { color:var(--cg-muted);font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase; }
+.cg-metric-value { font-size:30px;font-weight:800;letter-spacing:-.05em;margin-top:12px; }
+.cg-metric-detail { color:var(--cg-muted);font-size:11px;margin-top:2px; }
+.cg-pill { display:inline-block;border-radius:6px;padding:4px 8px;font-size:10px;font-weight:800;border:1px solid currentColor; }
+.cg-mono { font-family:'DM Mono',monospace; }
+div[data-testid="stMetric"] { background:linear-gradient(145deg,#19232d,#151e27);border:1px solid var(--cg-border);border-radius:14px;padding:14px 17px; }
+div[data-testid="stMetricLabel"] p { color:var(--cg-muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em; }
+div[data-testid="stMetricValue"] { font-weight:800; }
+.stButton button[kind="primary"] { background:#56d7b7;border:0;color:#101720;font-weight:800; }
+.stButton button { border-radius:9px; }
+footer { visibility:hidden; }
+</style>
+""", unsafe_allow_html=True)
+
+
+def make_demo_events() -> list[dict]:
+    now = datetime.now(timezone.utc)
+    templates = [
+        ("4624", "Successful Login", "j.wells", "Low", "Success", "Interactive sign-in completed from a known private network.", "10.20.1.15"),
+        ("4688", "Process Start", "SYSTEM", "Informational", "Observed", "A signed operating-system service process started.", "127.0.0.1"),
+        ("5156", "Network Connection", "SYSTEM", "Informational", "Allowed", "An outbound connection was permitted by the local firewall.", "10.20.1.15"),
+        ("4624", "Successful Login", "svc-backup", "Low", "Success", "A scheduled service account sign-in completed.", "10.20.1.26"),
+        ("5158", "Port Activity", "SYSTEM", "Low", "Observed", "A local process bound to an ephemeral port.", "10.20.1.15"),
+    ]
+    events = []
+    for i in range(38):
+        eid, typ, user, severity, status, desc, ip = templates[i % len(templates)]
+        events.append({"id": f"evt-{uuid.uuid4().hex[:10]}", "timestamp": now - timedelta(minutes=28 + i * 34), "eventId": eid, "eventType": typ, "user": user, "sourceIp": ip, "destinationIp": "192.0.2.40" if typ == "Network Connection" else "", "severity": severity, "status": status, "description": desc, "simulated": True})
+    ip = "198.51.100.23"
+    for i in range(9):
+        events.append({"id": f"evt-{uuid.uuid4().hex[:10]}", "timestamp": now - timedelta(minutes=36 - i * 2), "eventId": "4625", "eventType": "Failed Login", "user": "j.wells", "sourceIp": ip, "destinationIp": "", "severity": "Medium", "status": "Failed", "description": "A Windows Security log records a failed sign-in attempt. This event is simulated.", "simulated": True})
+    for eid, typ, severity, status, desc, ago in [
+        ("4624", "Successful Login", "High", "Success", "A successful sign-in followed the simulated failed-login burst from the same address.", 16),
+        ("4672", "Privilege Change", "High", "Observed", "A privileged sign-in token was assigned shortly after the simulated authentication sequence.", 14),
+    ]:
+        events.append({"id": f"evt-{uuid.uuid4().hex[:10]}", "timestamp": now - timedelta(minutes=ago), "eventId": eid, "eventType": typ, "user": "j.wells", "sourceIp": ip, "destinationIp": "", "severity": severity, "status": status, "description": desc, "simulated": True})
+    return sorted(events, key=lambda row: row["timestamp"], reverse=True)
+
+
+def findings_from_events(events: list[dict]) -> list[dict]:
+    failed = [e for e in events if e["eventType"].lower() == "failed login"]
+    groups: dict[str, list[dict]] = {}
+    for e in failed:
+        groups.setdefault(e.get("sourceIp") or e.get("user", "unknown"), []).append(e)
+    findings = []
+    for ip, rows in groups.items():
+        rows.sort(key=lambda e: e["timestamp"])
+        burst = next((window for i, first in enumerate(rows) if (window := [e for e in rows[i:] if e["timestamp"] <= first["timestamp"] + timedelta(minutes=15)]) and len(window) >= 5), [])
+        if not burst:
+            continue
+        last = burst[-1]["timestamp"]
+        follow = [e for e in events if e.get("sourceIp") == ip and last <= e["timestamp"] <= last + timedelta(hours=1) and e["eventType"] in ("Successful Login", "Privilege Change")]
+        success = any(e["eventType"] == "Successful Login" for e in follow)
+        privileged = any(e["eventType"] == "Privilege Change" for e in follow)
+        findings.append({"id": f"finding-{ip}", "timestamp": last, "title": "Failed sign-in burst followed by a successful login" if success else "High-volume failed sign-in burst", "category": "Brute-force-like activity", "severity": "High" if success and privileged else "Medium", "source": "SIMULATED DATA · Endpoint simulator" if all(e["simulated"] for e in burst + follow) else "Collected telemetry", "evidence": f"{len(burst)} failed sign-in events from {ip} occurred within 15 minutes" + (", followed by a successful sign-in" if success else "") + (" and privileged activity" if privileged else "") + ". This is a rule-based investigation indicator, not proof of compromise.", "status": "New", "eventIds": [e["id"] for e in burst + follow], "simulated": all(e["simulated"] for e in burst + follow)})
+    return findings
+
+
+if "events" not in st.session_state:
+    st.session_state.events = make_demo_events()
+if "findings" not in st.session_state:
+    st.session_state.findings = findings_from_events(st.session_state.events)
+if "scans" not in st.session_state:
+    st.session_state.scans = []
+if "chat" not in st.session_state:
+    st.session_state.chat = []
+
+events: list[dict] = st.session_state.events
+findings: list[dict] = st.session_state.findings
+active_findings = sum(f["status"] in ("New", "Investigating") for f in findings)
+
+with st.sidebar:
+    st.markdown('<div class="cg-brand">CYBERGUARD<span> AI</span></div><div class="cg-eyebrow">SOC workbench / M.Tech</div>', unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+    page = st.radio("WORKSPACE", NAV, label_visibility="visible")
+    st.markdown("---")
+    st.markdown("<div class='cg-eyebrow'>API / LOCAL DEMO</div><p style='font-size:12px;color:#56d7b7'>● Sample workspace ready</p><p style='font-size:11px;color:#96a6ac'>Model state: not trained / not evaluated</p>", unsafe_allow_html=True)
+    if st.button("↻  Reset simulated data", use_container_width=True):
+        st.session_state.events = make_demo_events()
+        st.session_state.findings = findings_from_events(st.session_state.events)
+        st.session_state.scans = []
+        st.rerun()
+    st.markdown("<br><div class='cg-eyebrow'>CYBERGUARD / 0.1<br>LOCAL LAB</div>", unsafe_allow_html=True)
+
+st.markdown(f"<div class='cg-eyebrow'>CYBERGUARD / WORKSPACE</div><h1 style='margin:.15rem 0 .2rem'>{page if page != 'Overview' else 'Security posture'}</h1><div style='color:#96a6ac;font-size:13px'>Stored telemetry review · no live monitoring</div>", unsafe_allow_html=True)
+st.markdown("<div class='cg-notice'>⚑ &nbsp; <b>STORED TELEMETRY</b> &nbsp;/&nbsp; Sample records are simulated. No live endpoint is connected; no model performance claims are available.</div>", unsafe_allow_html=True)
+
+
+def event_table(rows: list[dict], key: str) -> None:
+    if not rows:
+        st.info("No events in this view. Try another query or import a CSV / JSON event batch.")
+        return
+    frame = pd.DataFrame(rows).copy()
+    frame["timestamp"] = frame["timestamp"].map(lambda x: x.astimezone(timezone.utc).strftime("%b %d, %Y %H:%M UTC") if isinstance(x, datetime) else str(x))
+    frame = frame.rename(columns={"eventId": "Event ID", "timestamp": "Time", "eventType": "Type", "user": "Actor", "sourceIp": "Source IP", "severity": "Severity", "status": "Status", "description": "Evidence", "simulated": "Simulated"})
+    st.dataframe(frame[["Event ID", "Time", "Type", "Actor", "Source IP", "Severity", "Status", "Evidence", "Simulated"]], use_container_width=True, hide_index=True, key=key)
+
+
+if page == "Overview":
+    today = datetime.now(timezone.utc).date()
+    anomalies = sum(e["severity"] in ("High", "Critical") for e in events if e["timestamp"].date() == today)
+    failed = sum(e["eventType"] == "Failed Login" for e in events)
+    critical = sum(e["severity"] == "Critical" for e in events)
+    cols = st.columns(4)
+    for col, label, value, detail in zip(cols, ["Events stored", "Active findings", "Anomalies today", "Failed logins"], [len(events), active_findings, anomalies, failed], ["All ingested records", "Open investigation states", "High / critical records", "Stored event count"]):
+        col.markdown(f"<div class='cg-metric'><div class='cg-metric-label'>{label}</div><div class='cg-metric-value'>{value}</div><div class='cg-metric-detail'>{detail}</div></div>", unsafe_allow_html=True)
+    a, b = st.columns([1.45, 1])
+    with a:
+        st.subheader("Recent stored events")
+        event_table(events[:5], "overview-events")
+    with b:
+        st.subheader("Investigation queue")
+        if findings:
+            for f in findings[:5]:
+                st.markdown(f"<div class='cg-card'><span class='cg-pill' style='color:{COLORS.get(f['severity'], '#94a3b8')}'>{f['severity']}</span><b style='margin-left:10px'>{f['title']}</b><div style='color:#96a6ac;font-size:11px;margin-top:8px'>{f['category']} · {f['status']} · {len(f['eventIds'])} evidence IDs</div></div>", unsafe_allow_html=True)
+        else:
+            st.info("No findings returned.")
+    q1, q2, q3 = st.columns(3)
+    q1.metric("Critical event count", critical, "Stored severity aggregate")
+    q2.metric("Endpoint readiness", "No live device", "No agent heartbeat received")
+    q3.metric("Model state", "Not evaluated", "No accuracy claim is made")
+    st.caption("Last scan: " + (st.session_state.scans[0]["started"] if st.session_state.scans else "Not available") + " · All current sample records are simulated.")
+
+elif page == "Event review":
+    st.caption("Search imported telemetry and inspect evidence. Uploaded sources are not independently verified.")
+    upcol, flagcol = st.columns([1, 2])
+    with upcol:
+        upload = st.file_uploader("Upload CSV / JSON", type=["csv", "json"])
+    with flagcol:
+        mark_sim = st.checkbox("These file records are simulated", value=False, help="Unchecked uploads are stored as user-provided telemetry. The source is not independently verified.")
+    if upload is not None and st.button("Import records", type="primary"):
+        try:
+            raw = upload.getvalue().decode("utf-8-sig")
+            if upload.name.lower().endswith(".json"):
+                parsed = json.loads(raw)
+                rows = parsed.get("events", []) if isinstance(parsed, dict) else parsed
+            else:
+                rows = list(csv.DictReader(io.StringIO(raw)))
+            if not isinstance(rows, list) or not rows:
+                raise ValueError("File must contain at least one event row.")
+            normalized = []
+            for i, row in enumerate(rows, start=1):
+                aliases = {"timestamp": ("timestamp", "time", "created_at"), "eventId": ("eventId", "event_id", "id"), "eventType": ("eventType", "event_type", "type"), "user": ("user", "username", "actor"), "sourceIp": ("sourceIp", "source_ip", "src_ip"), "severity": ("severity",), "status": ("status", "result"), "description": ("description", "message"), "destinationIp": ("destinationIp", "destination_ip", "dst_ip")}
+                item = {target: next((str(row.get(k, "")).strip() for k in keys if row.get(k) is not None and str(row.get(k)).strip()), "") for target, keys in aliases.items()}
+                for required in ("timestamp", "eventId", "eventType", "user", "sourceIp", "severity", "status", "description"):
+                    if not item[required]:
+                        raise ValueError(f"Row {i} is missing required field: {required}.")
+                stamp = datetime.fromisoformat(item["timestamp"].replace("Z", "+00:00"))
+                if stamp.tzinfo is None: stamp = stamp.replace(tzinfo=timezone.utc)
+                if item["severity"] not in SEVERITIES:
+                    raise ValueError(f"Row {i} has unsupported severity.")
+                item.update({"id": f"upload-{uuid.uuid4().hex[:10]}", "timestamp": stamp.astimezone(timezone.utc), "simulated": mark_sim})
+                normalized.append(item)
+            st.session_state.events = sorted(normalized + events, key=lambda e: e["timestamp"], reverse=True)
+            st.session_state.findings = findings_from_events(st.session_state.events)
+            st.success(f"{len(normalized)} events imported. Source data has not been independently verified.")
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Upload not imported: {exc}")
+    controls = st.columns([3, 1])
+    query = controls[0].text_input("Search event IDs, actors, IPs, or evidence", placeholder="e.g. 198.51.100.23")
+    sev = controls[1].selectbox("Severity", ["All severities"] + SEVERITIES)
+    subset = [e for e in events if (sev == "All severities" or e["severity"] == sev) and (not query or query.lower() in " ".join(str(e.get(k, "")) for k in ("eventId", "eventType", "user", "sourceIp", "description")).lower())]
+    st.caption(f"{len(subset)} matching records · up to 200 displayed")
+    event_table(subset[:200], "event-review-table")
+    st.download_button("Download current events as CSV", pd.DataFrame(subset).to_csv(index=False), "cyberguard-events.csv", "text/csv")
+
+elif page == "Scans":
+    st.caption("Launch rule-based analysis against stored telemetry. Scans do not connect to live endpoints.")
+    with st.container(border=True):
+        st.subheader("Launch analysis")
+        c1, c2, c3 = st.columns([3, 1, 1])
+        c1.write("Select scope for stored-event analysis. Model signals are excluded.")
+        if c2.button("Quick scan", use_container_width=True):
+            st.session_state.findings = findings_from_events(events)
+            st.session_state.scans.insert(0, {"id": f"scan-{uuid.uuid4().hex[:8]}", "type": "quick", "started": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"), "status": "Completed", "progress": 100, "threats": len(st.session_state.findings), "anomalies": sum(e["severity"] in ("High", "Critical") for e in events), "simulated": all(e["simulated"] for e in events)})
+            st.success("Quick scan completed. Rule-based indicators only.")
+        if c3.button("Deep scan", type="primary", use_container_width=True):
+            st.session_state.findings = findings_from_events(events)
+            st.session_state.scans.insert(0, {"id": f"scan-{uuid.uuid4().hex[:8]}", "type": "deep", "started": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"), "status": "Completed", "progress": 100, "threats": len(st.session_state.findings), "anomalies": sum(e["severity"] in ("High", "Critical") for e in events), "simulated": all(e["simulated"] for e in events)})
+            st.success("Deep scan completed. Rule-based indicators only.")
+    st.subheader("Recent scan records")
+    if st.session_state.scans:
+        st.dataframe(pd.DataFrame(st.session_state.scans), use_container_width=True, hide_index=True)
+    else:
+        st.info("No scans recorded. Start a Quick or Deep scan to analyze stored telemetry.")
+
+elif page == "Findings":
+    st.caption("Each rule-based finding links to stored event IDs. Findings are indicators, not proof of compromise.")
+    if not findings:
+        st.info("No findings to investigate. A scan can evaluate the stored records.")
+    for finding in findings:
+        with st.container(border=True):
+            c1, c2 = st.columns([4, 1])
+            c1.markdown(f"<span class='cg-pill' style='color:{COLORS.get(finding['severity'], '#94a3b8')}'>{finding['severity']}</span> &nbsp; <span class='cg-eyebrow'>{finding['category']} · {finding['status']}</span>", unsafe_allow_html=True)
+            c1.markdown(f"**{finding['title']}**\n\n{finding['evidence']}")
+            c1.caption(f"Source: {finding['source']} · {finding['timestamp'].strftime('%b %d, %Y %H:%M UTC')} · {len(finding['eventIds'])} evidence records")
+            with c2:
+                state = st.selectbox("Status", ["New", "Investigating", "Resolved", "Dismissed"], index=["New", "Investigating", "Resolved", "Dismissed"].index(finding["status"]), key=f"status-{finding['id']}", label_visibility="collapsed")
+                finding["status"] = state
+            with st.expander("Evidence IDs"):
+                st.code("\n".join(finding["eventIds"]), language=None)
+
+elif page == "Analytics":
+    st.caption("Aggregates from the event records in this browser session. Uploaded sources are not independently verified.")
+    df = pd.DataFrame(events)
+    cols = st.columns(4)
+    for col, label, val in zip(cols, ["Total events", "High / critical", "Unique actors", "Unique source IPs"], [len(events), int(df["severity"].isin(["High", "Critical"]).sum()), df["user"].nunique(), df["sourceIp"].nunique()]):
+        col.metric(label, val)
+    a, b = st.columns(2)
+    with a:
+        st.subheader("Events by severity")
+        st.bar_chart(df["severity"].value_counts().reindex(SEVERITIES, fill_value=0), color="#56d7b7")
+    with b:
+        st.subheader("Events by type")
+        st.bar_chart(df["eventType"].value_counts().head(8), color="#56d7b7")
+    hourly = df.assign(hour=df["timestamp"].map(lambda d: d.strftime("%H:00"))).groupby("hour").size().sort_index()
+    st.subheader("Stored event volume by hour (UTC)")
+    st.line_chart(hourly, color="#56d7b7")
+
+elif page == "Assistant":
+    st.caption("Answers are derived only from currently stored records. This is a simple evidence lookup, not an evaluated ML model.")
+    for item in st.session_state.chat:
+        with st.chat_message(item["role"]):
+            st.markdown(item["content"])
+            if item.get("evidence"):
+                st.caption("Evidence IDs: " + ", ".join(item["evidence"]))
+    for suggestion in ["Which stored events support the latest finding?", "What evidence is available for failed logins?", "Summarize events linked to an event ID."]:
+        if st.button(suggestion, key=f"suggest-{suggestion}"):
+            st.session_state.pending_question = suggestion
+    question = st.chat_input("Ask about an event, finding, or evidence ID…")
+    if question is None and st.session_state.get("pending_question"):
+        question = st.session_state.pop("pending_question")
+    if question:
+        st.session_state.chat.append({"role": "user", "content": question})
+        q = question.lower()
+        matches = []
+        for e in events:
+            if (any(ch.isdigit() for ch in question) and question.strip() in (e["eventId"], e["id"])) or ("login" in q or "sign-in" in q or "failed" in q) and "login" in e["eventType"].lower() or ("today" in q or "recent" in q or "summary" in q) and e["timestamp"] >= datetime.now(timezone.utc) - timedelta(days=1):
+                matches.append(e)
+        related = next((f for f in findings if f["status"] in ("New", "Investigating") and set(f["eventIds"]) & {e["id"] for e in matches}), None)
+        if related:
+            answer = related["title"] + ". " + related["evidence"]
+        elif matches:
+            failed_count = sum(e["eventType"] == "Failed Login" for e in matches)
+            answer = f"{len(matches)} matching event records found" + (" in simulated telemetry" if all(e["simulated"] for e in matches) else " in stored telemetry") + (f"; {failed_count} are failed sign-in events." if failed_count else ".")
+        else:
+            answer = "I don't have enough matching evidence in the stored telemetry to determine that."
+        evidence = [e["id"] for e in matches[:8]]
+        st.session_state.chat.append({"role": "assistant", "content": answer, "evidence": evidence})
+        st.rerun()
+    st.info("Boundaries: stored context only · citations are event IDs, not proof of causality · model not trained or evaluated · no live endpoint actions.")
+
+elif page == "Devices":
+    st.caption("Endpoint inventory and agent heartbeat status. This Streamlit demo has no monitoring API connection.")
+    st.warning("No live device is connected. The original Node API agent-enrollment workflow is not connected to this Streamlit port.")
+    st.subheader("Registered devices")
+    st.info("No device records. Connect and enroll an agent through the original CyberGuard API to collect host telemetry.")
+    st.markdown("### Readiness, not protection")
+    st.write("No live telemetry, enforcement, agent heartbeat, or production security guarantee is represented by this demo app.")
+
+st.markdown("<hr style='border-color:#2b3946;margin-top:30px'><div class='cg-eyebrow'>CYBERGUARD AI · EDUCATIONAL M.TECH SOC WORKBENCH · SAMPLE DATA IS SIMULATED</div>", unsafe_allow_html=True)
