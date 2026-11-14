@@ -14,11 +14,12 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
+from sklearn.ensemble import IsolationForest
 
 
 st.set_page_config(page_title="CyberGuard AI | SOC Workbench", page_icon="🛡️", layout="wide")
 
-NAV = ["Overview", "Scans", "Event review", "Findings", "Investigations", "Analytics", "Assistant", "Device health", "Devices"]
+NAV = ["Overview", "Scans", "Event review", "Findings", "Investigations", "Analytics", "ML Lab", "Assistant", "Devices"]
 SEVERITIES = ["Critical", "High", "Medium", "Low", "Informational"]
 COLORS = {"Critical": "#fb7185", "High": "#fb923c", "Medium": "#fbbf24", "Low": "#56d7b7", "Informational": "#94a3b8"}
 INDIA_TZ = ZoneInfo("Asia/Kolkata")
@@ -128,6 +129,43 @@ def in_window(event: dict, window: str) -> bool:
     return stamp >= datetime.now(timezone.utc) - timedelta(hours=hours)
 
 
+def anomaly_scores(events: list[dict], contamination: float) -> pd.DataFrame:
+    """Score stored telemetry with an unsupervised Isolation Forest model."""
+    frame = pd.DataFrame(events).copy()
+    frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
+    frame["hour"] = frame["timestamp"].dt.hour
+    frame["severity_weight"] = frame["severity"].map({"Informational": 0, "Low": 1, "Medium": 2, "High": 3, "Critical": 4}).fillna(0)
+    frame["type_frequency"] = frame.groupby("eventType")["eventType"].transform("size")
+    frame["actor_frequency"] = frame.groupby("user")["user"].transform("size")
+    frame["source_frequency"] = frame.groupby("sourceIp")["sourceIp"].transform("size")
+    encoded = pd.get_dummies(frame[["eventType", "user", "sourceIp", "status"]].fillna("unknown"), dtype=float)
+    numeric = frame[["hour", "severity_weight", "type_frequency", "actor_frequency", "source_frequency"]].astype(float)
+    features = pd.concat([numeric, encoded], axis=1)
+    model = IsolationForest(contamination=contamination, random_state=42, n_estimators=200)
+    prediction = model.fit_predict(features)
+    raw_score = -model.decision_function(features)
+    scale = raw_score.max() - raw_score.min()
+    frame["anomaly_score"] = 50.0 if scale == 0 else ((raw_score - raw_score.min()) / scale * 100)
+    frame["model_label"] = ["Anomalous" if value == -1 else "Baseline" for value in prediction]
+
+    def explain(row: pd.Series) -> str:
+        reasons = []
+        if row["source_frequency"] <= 1 and row["sourceIp"]:
+            reasons.append("rare source address")
+        if row["actor_frequency"] <= 1 and row["user"]:
+            reasons.append("rare account activity")
+        if row["type_frequency"] <= 1:
+            reasons.append("rare event type")
+        if row["hour"] < 6 or row["hour"] > 22:
+            reasons.append("unusual time of day")
+        return ", ".join(reasons) if reasons else "combination of event attributes differs from the baseline"
+
+    frame["explanation"] = frame.apply(explain, axis=1)
+    result = frame[["id", "timestamp", "eventType", "user", "sourceIp", "severity", "anomaly_score", "model_label", "explanation"]].copy()
+    result["timestamp"] = result["timestamp"].apply(local_time)
+    return result.sort_values("anomaly_score", ascending=False)
+
+
 def local_db() -> sqlite3.Connection:
     conn = sqlite3.connect("cyberguard-local.db")
     conn.execute("CREATE TABLE IF NOT EXISTS cases (case_id TEXT PRIMARY KEY, finding_id TEXT, title TEXT, status TEXT, owner TEXT, notes TEXT, updated_at TEXT)")
@@ -155,7 +193,7 @@ with st.sidebar:
     st.markdown("<br>", unsafe_allow_html=True)
     page = st.radio("WORKSPACE", NAV, label_visibility="visible", key="workspace_page")
     st.markdown("---")
-    st.markdown("<div class='cg-eyebrow'>API / LOCAL DEMO</div><p style='font-size:12px;color:#56d7b7'>● Sample workspace ready</p><p style='font-size:11px;color:#96a6ac'>Model state: not trained / not evaluated</p>", unsafe_allow_html=True)
+    st.markdown("<div class='cg-eyebrow'>MODEL / ANALYTICS</div><p style='font-size:12px;color:#56d7b7'>● Telemetry workspace ready</p><p style='font-size:11px;color:#96a6ac'>Isolation Forest · unsupervised anomaly scoring</p>", unsafe_allow_html=True)
     if st.button("↻  Reset simulated data", use_container_width=True):
         st.session_state.events = make_demo_events()
         st.session_state.findings = findings_from_events(st.session_state.events)
@@ -431,6 +469,34 @@ elif page == "Analytics":
             st.line_chart(hourly, color="#56d7b7")
             st.caption("Times are shown in Indian Standard Time (IST, UTC+05:30). Hover over the plot to inspect values.")
 
+elif page == "ML Lab":
+    st.caption("Unsupervised anomaly detection over the stored telemetry. This model ranks unusual records; it does not confirm an attack.")
+    if len(events) < 8:
+        st.info("Add at least 8 event records to create an anomaly baseline.")
+    else:
+        c1, c2 = st.columns([2, 1])
+        sensitivity = c1.select_slider("Detection sensitivity", options=["Conservative", "Balanced", "Sensitive"], value="Balanced")
+        contamination = {"Conservative": 0.05, "Balanced": 0.10, "Sensitive": 0.20}[sensitivity]
+        c2.metric("Telemetry records", len(events))
+        if st.button("Run anomaly model", type="primary", use_container_width=True):
+            st.session_state.ml_results = anomaly_scores(events, contamination)
+            st.session_state.ml_sensitivity = sensitivity
+        results = st.session_state.get("ml_results")
+        if results is None:
+            st.info("Run the model to rank records using time, severity, event rarity, account rarity, source-address rarity, and event categories.")
+        else:
+            anomalies = results[results["model_label"] == "Anomalous"]
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Anomalies flagged", len(anomalies))
+            m2.metric("Highest anomaly score", f"{results['anomaly_score'].max():.0f}/100")
+            m3.metric("Model sensitivity", st.session_state.get("ml_sensitivity", sensitivity))
+            st.markdown("### Ranked event records")
+            display = results.rename(columns={"id": "Event ID", "timestamp": "Time (IST)", "eventType": "Event type", "user": "Account", "sourceIp": "Source IP", "severity": "Severity", "anomaly_score": "Anomaly score", "model_label": "Model label", "explanation": "Why it stands out"})
+            st.dataframe(display, use_container_width=True, hide_index=True, column_config={"Anomaly score": st.column_config.NumberColumn(format="%.1f / 100")})
+            st.download_button("Download model results (CSV)", display.to_csv(index=False), "cyberguard-anomaly-results.csv", "text/csv")
+            with st.expander("Model design and limits"):
+                st.markdown("**Algorithm:** Isolation Forest with 200 trees and a fixed random seed for repeatable classroom demonstrations.\n\n**Features:** hour of event, severity weight, frequency of the event type, account, and source address, plus one-hot encoded event type, account, source address, and status.\n\n**Interpretation:** the anomaly score is a relative rank within the records currently loaded into the app. It is not a probability of compromise, and results should be reviewed with the linked evidence.")
+
 elif page == "Assistant":
     st.caption("Answers are derived only from currently stored records. This is a simple evidence lookup, not an evaluated ML model.")
     for item in st.session_state.chat:
@@ -527,74 +593,5 @@ ConvertTo-Json -InputObject @($output) -Depth 4 -Compress
         st.caption("Selected records: Windows Security sign-in / privilege / process / service events (IDs 4624, 4625, 4672, 4688, 4697), plus System and Application warnings/errors. Maximum 500 records per channel.")
     st.markdown("### Live monitoring")
     st.write("This is a one-time collection. It does not run in the background, stream events continuously, or take response actions.")
-
-elif page == "Device health":
-    st.caption("Check the basics that protect a Windows device. No information entered here is stored or sent anywhere.")
-    if os.name != "nt":
-        st.markdown("### Online device security check")
-        st.write("Answer these quick checks to get a clear action list for your device.")
-        c1, c2 = st.columns(2)
-        firewall = c1.selectbox("Is Windows Firewall on?", ["Yes", "No", "I don't know"], key="web-firewall")
-        defender = c2.selectbox("Is Microsoft Defender or another antivirus active?", ["Yes", "No", "I don't know"], key="web-defender")
-        updates = c1.selectbox("Are Windows Updates current?", ["Yes", "No", "I don't know"], key="web-updates")
-        disk = c2.selectbox("Do you have at least 15 GB free on C:?", ["Yes", "No", "I don't know"], key="web-disk")
-        if st.button("Review my security", type="primary", use_container_width=True):
-            answers = {"Windows Firewall": firewall, "Antivirus protection": defender, "Windows Updates": updates, "Free disk space": disk}
-            issues = [name for name, value in answers.items() if value == "No"]
-            unknown = [name for name, value in answers.items() if value == "I don't know"]
-            score = max(0, 100 - (len(issues) * 30) - (len(unknown) * 10))
-            a, b, c = st.columns(3)
-            a.metric("Security readiness", f"{score}/100")
-            b.metric("Items needing action", len(issues))
-            c.metric("Items to check", len(unknown))
-            if issues:
-                st.error("Action needed: " + ", ".join(issues) + ".")
-                if "Windows Firewall" in issues:
-                    st.write("Turn on Firewall: **Windows Security → Firewall & network protection**.")
-                if "Antivirus protection" in issues:
-                    st.write("Open **Windows Security → Virus & threat protection** and turn on real-time protection.")
-                if "Windows Updates" in issues:
-                    st.write("Open **Settings → Windows Update** and install available updates.")
-                if "Free disk space" in issues:
-                    st.write("Use **Settings → System → Storage** to remove temporary files and free space.")
-            else:
-                st.success("No urgent issue was reported. Keep checking for updates and make sure your security tools stay on.")
-            if unknown:
-                st.info("Check these items next: " + ", ".join(unknown) + ".")
-        st.caption("This browser check uses only the answers you select. The optional local Windows version can read these settings directly from your PC.")
-    else:
-        st.info("Checks include Windows version, memory, system-drive space, firewall state, Microsoft Defender status, and recent installed updates.")
-        if st.button("Check this PC", type="primary"):
-            ps = r'''$ErrorActionPreference='SilentlyContinue'; $os=Get-CimInstance Win32_OperatingSystem; $disk=Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$env:SystemDrive'"; $fw=Get-NetFirewallProfile | Select-Object Name,Enabled; $def=Get-MpComputerStatus | Select-Object AntivirusEnabled,RealTimeProtectionEnabled,AntivirusSignatureLastUpdated; $hot=Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 5 HotFixID,InstalledOn,Description; [pscustomobject]@{computer=$env:COMPUTERNAME; os=$os.Caption; version=$os.Version; memoryFreeGB=[math]::Round($os.FreePhysicalMemory/1MB,1); memoryTotalGB=[math]::Round($os.TotalVisibleMemorySize/1MB,1); drive=$env:SystemDrive; diskFreeGB=[math]::Round($disk.FreeSpace/1GB,1); diskTotalGB=[math]::Round($disk.Size/1GB,1); firewall=@($fw); defender=$def; updates=@($hot)} | ConvertTo-Json -Depth 5 -Compress'''
-            try:
-                result = subprocess.run(["powershell.exe", "-NoLogo", "-NoProfile", "-Command", ps], capture_output=True, text=True, timeout=45, check=False)
-                if result.returncode != 0 or not result.stdout.strip():
-                    st.error("Windows could not return the requested health details. Try reopening the local app.")
-                else:
-                    health = json.loads(result.stdout)
-                    st.session_state.local_health = health
-            except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
-                st.error("The local health check failed. Confirm PowerShell is available.")
-        health = st.session_state.get("local_health")
-        if health:
-            st.markdown(f"### {health.get('computer', 'This PC')} · {health.get('os', 'Windows')} {health.get('version', '')}")
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Memory available", f"{health.get('memoryFreeGB', '—')} GB", f"of {health.get('memoryTotalGB', '—')} GB")
-            m2.metric(f"{health.get('drive', 'System')} free space", f"{health.get('diskFreeGB', '—')} GB", f"of {health.get('diskTotalGB', '—')} GB")
-            m3.metric("Recent updates found", len(health.get("updates", [])))
-            st.subheader("Firewall profiles")
-            for profile in health.get("firewall", []):
-                enabled = profile.get("Enabled") is True
-                (st.success if enabled else st.warning)(f"{profile.get('Name', 'Profile')}: {'On' if enabled else 'Off'}")
-            defender = health.get("defender") or {}
-            d1, d2 = st.columns(2)
-            (d1.success if defender.get("AntivirusEnabled") else d1.warning)("Microsoft Defender antivirus: " + ("On" if defender.get("AntivirusEnabled") else "Off / unavailable"))
-            (d2.success if defender.get("RealTimeProtectionEnabled") else d2.warning)("Real-time protection: " + ("On" if defender.get("RealTimeProtectionEnabled") else "Off / unavailable"))
-            st.subheader("Recent installed updates")
-            if health.get("updates"):
-                st.dataframe(pd.DataFrame(health["updates"]), use_container_width=True, hide_index=True)
-            else:
-                st.caption("No recent updates were returned by Windows.")
-            st.caption("These checks are informational and do not replace Windows Security or an IT professional's review.")
 
 st.markdown("<hr style='border-color:#2b3946;margin-top:30px'><div class='cg-eyebrow'>CYBERGUARD AI · EDUCATIONAL M.TECH SOC WORKBENCH · SAMPLE DATA IS SIMULATED</div>", unsafe_allow_html=True)

@@ -1,6 +1,6 @@
 # CyberGuard AI on Streamlit
 
-This folder-level app is an educational Streamlit port of the CyberGuard AI SOC dashboard. It includes overview, scans, event review, plain-language findings, local investigations, analytics, an evidence lookup assistant, device health checks, and Windows event collection.
+This folder-level app is an educational Streamlit port of the CyberGuard AI SOC dashboard. It includes overview, scans, event review, plain-language findings, local investigations, analytics, an Isolation Forest ML lab, an evidence lookup assistant, and Windows event collection.
 
 ## Run locally
 
@@ -13,7 +13,7 @@ python -m streamlit run streamlit_app.py --server.address 127.0.0.1
 
 On Windows, open **Devices** and choose **Collect Windows logs on this PC**. The local app reads a selected recent window from Security sign-in / privilege / process / service events (IDs 4624, 4625, 4672, 4688, 4697) and System/Application warnings and errors. It analyzes the collected records in local session memory only. Security-log access may require starting the local app from an Administrator PowerShell.
 
-The **Device health** page runs read-only PowerShell checks for Windows version, memory, system-drive space, firewall profiles, Microsoft Defender status, and recent updates. **Investigations** stores case status, assignee, and notes in `cyberguard-local.db` on that PC and can export a CSV report. These pages do not upload local records or notes. Keep the database file private; it may contain investigation notes.
+The **ML Lab** runs an Isolation Forest model with 200 trees over the currently stored telemetry. It uses event hour, severity, event type frequency, account frequency, source-address frequency, and one-hot encoded categories to rank anomalous records. **Investigations** stores case status, assignee, and notes in `cyberguard-local.db` on that PC and can export a CSV report. Keep the database file private; it may contain investigation notes.
 
 ## Deploy with Streamlit Community Cloud
 
@@ -25,5 +25,6 @@ Connect this GitHub repository, choose the `main` branch, and set the app file t
 - Sample records are marked simulated. Uploaded data is user-provided and its source is not independently verified.
 - The original React app's Clerk authentication, PostgreSQL-backed Node API, monitoring-agent enrollment, and cross-user persistence are not connected here.
 - The Streamlit Community Cloud instance cannot read a visitor's computer. Local Windows event collection is available only when this app is running on that Windows computer; it is a one-time collection, not continuous background monitoring.
-- On the hosted site, the Device health page provides a private browser-based self-check. Direct Windows event collection, direct device-health checks, and local investigation storage require running the app locally on Windows.
+- On the hosted site, the ML Lab runs on the currently stored browser-session telemetry. Direct Windows event collection and local investigation storage require running the app locally on Windows.
+- The anomaly score is a relative rank for the telemetry currently loaded into the app. It is not a probability of compromise and needs analyst review with the linked event evidence.
 - Scans run transparent rule-based checks against the session's stored events; there is no trained or evaluated ML model, live endpoint collection, or remediation.
