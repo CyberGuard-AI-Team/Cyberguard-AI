@@ -2,6 +2,15 @@
 
 This folder-level app is an educational Streamlit port of the CyberGuard AI SOC dashboard. It includes overview, scans, event review, plain-language findings, local investigations, analytics, an Isolation Forest ML lab, an evidence lookup assistant, and Windows event collection.
 
+## How CyberGuard works
+
+1. Review the included activity, upload a CSV/JSON event file, or collect selected Windows Event Logs in a local Windows run.
+2. Use **Check my activity** for the guided rule checks, or **Smart analysis** for the Isolation Forest anomaly ranking.
+3. Read **What needs attention** for a plain-language explanation and suggested next action.
+4. Use **My follow-ups** to record what you checked and download a case report.
+
+The app also includes an **About CyberGuard** page and an **About this page** panel on every feature screen for first-time users.
+
 ## Run locally
 
 From the repository root:

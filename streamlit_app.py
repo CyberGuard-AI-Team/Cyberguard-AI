@@ -20,8 +20,8 @@ from sklearn.ensemble import IsolationForest
 
 st.set_page_config(page_title="CyberGuard AI | SOC Workbench", page_icon="🛡️", layout="wide")
 
-NAV = ["Overview", "Scans", "Event review", "Findings", "Investigations", "Analytics", "ML Lab", "Assistant", "Devices"]
-PAGE_LABELS = {"Overview": "Home", "Scans": "Check my activity", "Event review": "Activity history", "Findings": "What needs attention", "Investigations": "My follow-ups", "Analytics": "Activity summary", "ML Lab": "Smart analysis", "Assistant": "Ask CyberGuard", "Devices": "Connect my PC"}
+NAV = ["Overview", "About CyberGuard", "Scans", "Event review", "Findings", "Investigations", "Analytics", "ML Lab", "Assistant", "Devices"]
+PAGE_LABELS = {"Overview": "Home", "About CyberGuard": "About CyberGuard", "Scans": "Check my activity", "Event review": "Activity history", "Findings": "What needs attention", "Investigations": "My follow-ups", "Analytics": "Activity summary", "ML Lab": "Smart analysis", "Assistant": "Ask CyberGuard", "Devices": "Connect my PC"}
 SEVERITIES = ["Critical", "High", "Medium", "Low", "Informational"]
 COLORS = {"Critical": "#fb7185", "High": "#fb923c", "Medium": "#fbbf24", "Low": "#56d7b7", "Informational": "#94a3b8"}
 INDIA_TZ = ZoneInfo("Asia/Kolkata")
@@ -119,6 +119,25 @@ def findings_from_events(events: list[dict]) -> list[dict]:
 
 def set_page(page: str) -> None:
     st.session_state.workspace_page = page
+
+
+FEATURE_GUIDES = {
+    "Overview": ("Your starting point", "See the most important thing to do next, recent activity, and quick links to the right page."),
+    "Scans": ("Check my activity", "Runs a guided review of the activity already in this workspace and turns it into easy-to-read results."),
+    "Event review": ("Activity history", "Search or upload activity records, then open an item to understand what happened."),
+    "Findings": ("What needs attention", "Shows possible security concerns in plain language, along with the safest next action."),
+    "Investigations": ("My follow-ups", "Keep a simple record of what you checked, who is handling it, and what should happen next."),
+    "Analytics": ("Activity summary", "Shows patterns in your activity over time so you can spot changes without reading every record."),
+    "ML Lab": ("Smart analysis", "Uses an AI model to find activity that differs from the usual pattern and explains why it stood out."),
+    "Assistant": ("Ask CyberGuard", "Ask everyday questions about the activity shown in this workspace and get a simple answer."),
+    "Devices": ("Connect my PC", "When run locally on Windows, this can bring selected Windows Event Log activity into the workspace."),
+}
+
+
+def show_feature_guide(feature: str) -> None:
+    title, description = FEATURE_GUIDES[feature]
+    with st.expander(f"About {title}", expanded=False):
+        st.markdown(f"**What it does:** {description}\n\n**How to use it:** Start with the information on this page, then use the buttons or filters to focus on what matters to you.\n\n**What to do with the result:** If you see something you do not recognise, open it, read the recommended next step, and contact your IT support team if needed.")
 
 
 def in_window(event: dict, window: str) -> bool:
@@ -233,6 +252,8 @@ with st.sidebar:
     st.markdown("<br><div class='cg-eyebrow'>CYBERGUARD / 0.1<br>LOCAL LAB</div>", unsafe_allow_html=True)
 
 st.markdown(f"<div class='cg-eyebrow'>CYBERGUARD / YOUR SECURITY</div><h1 style='margin:.15rem 0 .2rem'>{PAGE_LABELS[page] if page != 'Overview' else 'Your security at a glance'}</h1><div style='color:#96a6ac;font-size:13px'>Simple explanations and clear next steps</div>", unsafe_allow_html=True)
+if page in FEATURE_GUIDES:
+    show_feature_guide(page)
 
 
 def event_table(rows: list[dict], key: str) -> None:
@@ -245,7 +266,39 @@ def event_table(rows: list[dict], key: str) -> None:
     st.dataframe(frame[["When", "What happened", "Account", "How important", "Plain explanation"]], use_container_width=True, hide_index=True, key=key)
 
 
-if page == "Overview":
+if page == "About CyberGuard":
+    st.markdown("<div class='cg-card'><h3 style='margin-top:0'>How CyberGuard works</h3><p style='color:#aebdc2;margin-bottom:0'>CyberGuard helps you understand security activity in three simple steps: bring in activity, check what stands out, and follow up on anything unfamiliar.</p></div>", unsafe_allow_html=True)
+    step_one, step_two, step_three = st.tabs(["1 · Add activity", "2 · Check it", "3 · Take action"])
+    with step_one:
+        st.markdown("### Add or review activity\nYou can explore the included workspace activity, upload a CSV or JSON file, or connect selected Windows Event Logs when running the project locally.")
+        if st.button("Open activity history", use_container_width=True, key="about-history"):
+            set_page("Event review")
+            st.rerun()
+    with step_two:
+        st.markdown("### Let CyberGuard explain it\nUse **Check my activity** for a guided review. Use **Smart analysis** when you want AI to highlight activity that looks different from the usual pattern.")
+        a1, a2 = st.columns(2)
+        if a1.button("Check my activity", type="primary", use_container_width=True, key="about-check"):
+            set_page("Scans")
+            st.rerun()
+        if a2.button("Open smart analysis", use_container_width=True, key="about-ml"):
+            set_page("ML Lab")
+            st.rerun()
+    with step_three:
+        st.markdown("### Decide what to do\nOpen **What needs attention** for a clear explanation and suggested next step. Save your own notes in **My follow-ups** and download a report when needed.")
+        a1, a2 = st.columns(2)
+        if a1.button("See what needs attention", type="primary", use_container_width=True, key="about-findings"):
+            set_page("Findings")
+            st.rerun()
+        if a2.button("Open my follow-ups", use_container_width=True, key="about-followups"):
+            set_page("Investigations")
+            st.rerun()
+    with st.expander("What each page is for", expanded=True):
+        for feature in FEATURE_GUIDES:
+            title, description = FEATURE_GUIDES[feature]
+            st.markdown(f"**{title}:** {description}")
+    st.info("A simple rule of thumb: if the activity is familiar, you can mark it done. If it is unfamiliar, change the relevant password and contact your IT support team.")
+
+elif page == "Overview":
     filter_col, _ = st.columns([1, 3])
     with filter_col:
         window = st.radio("Time range", ["Past 24 hours", "Past 7 days", "All records"], horizontal=True, label_visibility="collapsed", key="overview_window")
