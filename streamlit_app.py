@@ -9,6 +9,7 @@ import subprocess
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
@@ -19,6 +20,13 @@ st.set_page_config(page_title="CyberGuard AI | SOC Workbench", page_icon="🛡�
 NAV = ["Overview", "Scans", "Event review", "Findings", "Analytics", "Assistant", "Devices"]
 SEVERITIES = ["Critical", "High", "Medium", "Low", "Informational"]
 COLORS = {"Critical": "#fb7185", "High": "#fb923c", "Medium": "#fbbf24", "Low": "#56d7b7", "Informational": "#94a3b8"}
+INDIA_TZ = ZoneInfo("Asia/Kolkata")
+
+
+def local_time(value: datetime, fmt: str = "%d %b %Y, %I:%M %p IST") -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(INDIA_TZ).strftime(fmt)
 
 st.markdown("""
 <style>
@@ -98,7 +106,10 @@ def findings_from_events(events: list[dict]) -> list[dict]:
         follow = [e for e in events if e.get("sourceIp") == ip and last <= e["timestamp"] <= last + timedelta(hours=1) and e["eventType"] in ("Successful Login", "Privilege Change")]
         success = any(e["eventType"] == "Successful Login" for e in follow)
         privileged = any(e["eventType"] == "Privilege Change" for e in follow)
-        findings.append({"id": f"finding-{ip}", "timestamp": last, "title": "Failed sign-in burst followed by a successful login" if success else "High-volume failed sign-in burst", "category": "Brute-force-like activity", "severity": "High" if success and privileged else "Medium", "source": "SIMULATED DATA · Endpoint simulator" if all(e["simulated"] for e in burst + follow) else "Collected telemetry", "evidence": f"{len(burst)} failed sign-in events from {ip} occurred within 15 minutes" + (", followed by a successful sign-in" if success else "") + (" and privileged activity" if privileged else "") + ". This is a rule-based investigation indicator, not proof of compromise.", "status": "New", "eventIds": [e["id"] for e in burst + follow], "simulated": all(e["simulated"] for e in burst + follow)})
+        finding_title = "Several sign-in attempts failed, then one succeeded" if success else "Several sign-in attempts failed in a short time"
+        plain_summary = f"We found {len(burst)} failed sign-in attempts from {ip} within 15 minutes" + (", followed by a successful sign-in" if success else "") + (" and an account-permission change" if privileged else "") + "."
+        next_steps = ("If this was not you, change the account password, sign out other sessions, and ask your IT support team to review the sign-in." if success else "If these attempts were not yours, change the account password and enable multi-factor authentication.")
+        findings.append({"id": f"finding-{ip}", "timestamp": last, "title": finding_title, "plain_summary": plain_summary, "next_steps": next_steps, "category": "Sign-in activity", "severity": "High" if success and privileged else "Medium", "source": "SIMULATED DATA · Endpoint simulator" if all(e["simulated"] for e in burst + follow) else "Collected telemetry", "evidence": plain_summary + " This is an automated rule match, not proof that someone accessed the device.", "status": "New", "eventIds": [e["id"] for e in burst + follow], "simulated": all(e["simulated"] for e in burst + follow)})
     return findings
 
 
@@ -153,7 +164,7 @@ def event_table(rows: list[dict], key: str) -> None:
         st.info("No events in this view. Try another query or import a CSV / JSON event batch.")
         return
     frame = pd.DataFrame(rows).copy()
-    frame["timestamp"] = frame["timestamp"].map(lambda x: x.astimezone(timezone.utc).strftime("%b %d, %Y %H:%M UTC") if isinstance(x, datetime) else str(x))
+    frame["timestamp"] = frame["timestamp"].map(lambda x: local_time(x) if isinstance(x, datetime) else str(x))
     frame = frame.rename(columns={"eventId": "Event ID", "timestamp": "Time", "eventType": "Type", "user": "Actor", "sourceIp": "Source IP", "severity": "Severity", "status": "Status", "description": "Evidence", "simulated": "Simulated"})
     st.dataframe(frame[["Event ID", "Time", "Type", "Actor", "Source IP", "Severity", "Status", "Evidence", "Simulated"]], use_container_width=True, hide_index=True, key=key)
 
@@ -169,7 +180,7 @@ if page == "Overview":
     cols = st.columns(4)
     for col, label, value, detail in zip(cols, ["Events in range", "Active findings", "High / critical", "Failed logins"], [len(visible_events), active_findings, anomalies, failed], [window, "Open investigation states", "In selected range", "In selected range"]):
         col.markdown(f"<div class='cg-metric'><div class='cg-metric-label'>{label}</div><div class='cg-metric-value'>{value}</div><div class='cg-metric-detail'>{detail}</div></div>", unsafe_allow_html=True)
-    st.markdown("<div class='cg-eyebrow' style='margin:18px 0 8px'>QUICK ACTIONS</div>", unsafe_allow_html=True)
+        st.markdown("<div class='cg-eyebrow' style='margin:18px 0 8px'>QUICK ACTIONS</div>", unsafe_allow_html=True)
     actions = st.columns(3)
     actions[0].button("⌕  Review event log", use_container_width=True, on_click=set_page, args=("Event review",))
     actions[1].button("◉  Open scan lab", type="primary", use_container_width=True, on_click=set_page, args=("Scans",))
@@ -182,14 +193,14 @@ if page == "Overview":
         st.subheader("Investigation queue")
         if findings:
             for f in findings[:5]:
-                st.markdown(f"<div class='cg-card'><span class='cg-pill' style='color:{COLORS.get(f['severity'], '#94a3b8')}'>{f['severity']}</span><b style='margin-left:10px'>{f['title']}</b><div style='color:#96a6ac;font-size:11px;margin-top:8px'>{f['category']} · {f['status']} · {len(f['eventIds'])} evidence IDs</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='cg-card'><span class='cg-pill' style='color:{COLORS.get(f['severity'], '#94a3b8')}'>{f['severity']}</span><b style='margin-left:10px'>{f['title']}</b><div style='color:#96a6ac;font-size:11px;margin-top:8px'>{f['category']} · {f['status']} · {len(f['eventIds'])} event records</div></div>", unsafe_allow_html=True)
         else:
             st.info("No findings returned.")
     q1, q2, q3 = st.columns(3)
     q1.metric("Critical event count", critical, "Stored severity aggregate")
     q2.metric("Endpoint readiness", "No live device", "No agent heartbeat received")
     q3.metric("Model state", "Not evaluated", "No accuracy claim is made")
-    st.caption("Last scan: " + (st.session_state.scans[0]["started"] if st.session_state.scans else "Not available") + " · All current sample records are simulated.")
+    st.caption("Last scan: " + (st.session_state.scans[0]["started"] if st.session_state.scans else "Not available") + " · Time zone: IST (UTC+05:30). Sample records are simulated.")
 
 elif page == "Event review":
     st.caption("Search stored telemetry, narrow the view, and select a row to inspect its full evidence record.")
@@ -237,7 +248,7 @@ elif page == "Event review":
     st.caption(f"{len(subset)} matching records · up to 200 displayed")
     if subset:
         frame = pd.DataFrame(subset[:200]).copy()
-        frame["timestamp"] = frame["timestamp"].map(lambda x: x.astimezone(timezone.utc).strftime("%b %d, %Y %H:%M UTC") if isinstance(x, datetime) else str(x))
+        frame["timestamp"] = frame["timestamp"].map(lambda x: local_time(x) if isinstance(x, datetime) else str(x))
         frame = frame.rename(columns={"eventId": "Event ID", "timestamp": "Time", "eventType": "Type", "user": "Actor", "sourceIp": "Source IP", "severity": "Severity", "status": "Status", "description": "Evidence", "simulated": "Simulated"})
         selection = st.dataframe(frame[["Event ID", "Time", "Type", "Actor", "Source IP", "Severity", "Status", "Evidence", "Simulated"]], use_container_width=True, hide_index=True, key="event-review-table", on_select="rerun", selection_mode="single-row", height=430)
         selected_rows = selection.selection.rows
@@ -307,7 +318,7 @@ elif page == "Scans":
         st.session_state.scans.insert(0, {
             "id": f"scan-{uuid.uuid4().hex[:8]}",
             "type": scan_type,
-            "started": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+            "started": local_time(datetime.now(timezone.utc)),
             "status": "Completed",
             "progress": 100,
             "records reviewed": total,
@@ -341,8 +352,8 @@ elif page == "Findings":
         with st.container(border=True):
             c1, c2 = st.columns([4, 1])
             c1.markdown(f"<span class='cg-pill' style='color:{COLORS.get(finding['severity'], '#94a3b8')}'>{finding['severity']}</span> &nbsp; <span class='cg-eyebrow'>{finding['category']} · {finding['status']}</span>", unsafe_allow_html=True)
-            c1.markdown(f"**{finding['title']}**\n\n{finding['evidence']}")
-            c1.caption(f"Source: {finding['source']} · {finding['timestamp'].strftime('%b %d, %Y %H:%M UTC')} · {len(finding['eventIds'])} evidence records")
+            c1.markdown(f"**What this may mean:** {finding.get('plain_summary', finding['evidence'])}\n\n**What you can do:** {finding.get('next_steps', 'Review the linked event records. This rule match is not proof of a compromise.')}")
+            c1.caption(f"Source: {finding['source']} · {local_time(finding['timestamp'])} · {len(finding['eventIds'])} event records")
             with c2:
                 state = st.selectbox("Status", ["New", "Investigating", "Resolved", "Dismissed"], index=["New", "Investigating", "Resolved", "Dismissed"].index(finding["status"]), key=f"status-{finding['id']}", label_visibility="collapsed")
                 finding["status"] = state
@@ -375,7 +386,7 @@ elif page == "Analytics":
             df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
             hourly = df.set_index("timestamp").resample("1h").size().rename("Events").to_frame()
             st.line_chart(hourly, color="#56d7b7")
-            st.caption("Hourly totals are shown in UTC. Hover over the plot to inspect values.")
+            st.caption("Times are shown in Indian Standard Time (IST, UTC+05:30). Hover over the plot to inspect values.")
 
 elif page == "Assistant":
     st.caption("Answers are derived only from currently stored records. This is a simple evidence lookup, not an evaluated ML model.")
@@ -399,7 +410,7 @@ elif page == "Assistant":
                 matches.append(e)
         related = next((f for f in findings if f["status"] in ("New", "Investigating") and set(f["eventIds"]) & {e["id"] for e in matches}), None)
         if related:
-            answer = related["title"] + ". " + related["evidence"]
+            answer = related["title"] + ". " + related.get("plain_summary", related["evidence"]) + " What you can do: " + related.get("next_steps", "Review the linked records. This rule match is not proof of compromise.")
         elif matches:
             failed_count = sum(e["eventType"] == "Failed Login" for e in matches)
             answer = f"{len(matches)} matching event records found" + (" in simulated telemetry" if all(e["simulated"] for e in matches) else " in stored telemetry") + (f"; {failed_count} are failed sign-in events." if failed_count else ".")
