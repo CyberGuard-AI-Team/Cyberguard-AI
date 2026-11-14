@@ -529,9 +529,39 @@ ConvertTo-Json -InputObject @($output) -Depth 4 -Compress
     st.write("This is a one-time collection. It does not run in the background, stream events continuously, or take response actions.")
 
 elif page == "Device health":
-    st.caption("Read-only checks on this Windows PC. Results stay in the local app session; no fixes are applied automatically.")
+    st.caption("Check the basics that protect a Windows device. No information entered here is stored or sent anywhere.")
     if os.name != "nt":
-        st.warning("The hosted Streamlit site runs remotely and cannot inspect your computer. Download the project and run it locally on Windows to use device health checks.")
+        st.markdown("### Online device security check")
+        st.write("Answer these quick checks to get a clear action list for your device.")
+        c1, c2 = st.columns(2)
+        firewall = c1.selectbox("Is Windows Firewall on?", ["Yes", "No", "I don't know"], key="web-firewall")
+        defender = c2.selectbox("Is Microsoft Defender or another antivirus active?", ["Yes", "No", "I don't know"], key="web-defender")
+        updates = c1.selectbox("Are Windows Updates current?", ["Yes", "No", "I don't know"], key="web-updates")
+        disk = c2.selectbox("Do you have at least 15 GB free on C:?", ["Yes", "No", "I don't know"], key="web-disk")
+        if st.button("Review my security", type="primary", use_container_width=True):
+            answers = {"Windows Firewall": firewall, "Antivirus protection": defender, "Windows Updates": updates, "Free disk space": disk}
+            issues = [name for name, value in answers.items() if value == "No"]
+            unknown = [name for name, value in answers.items() if value == "I don't know"]
+            score = max(0, 100 - (len(issues) * 30) - (len(unknown) * 10))
+            a, b, c = st.columns(3)
+            a.metric("Security readiness", f"{score}/100")
+            b.metric("Items needing action", len(issues))
+            c.metric("Items to check", len(unknown))
+            if issues:
+                st.error("Action needed: " + ", ".join(issues) + ".")
+                if "Windows Firewall" in issues:
+                    st.write("Turn on Firewall: **Windows Security → Firewall & network protection**.")
+                if "Antivirus protection" in issues:
+                    st.write("Open **Windows Security → Virus & threat protection** and turn on real-time protection.")
+                if "Windows Updates" in issues:
+                    st.write("Open **Settings → Windows Update** and install available updates.")
+                if "Free disk space" in issues:
+                    st.write("Use **Settings → System → Storage** to remove temporary files and free space.")
+            else:
+                st.success("No urgent issue was reported. Keep checking for updates and make sure your security tools stay on.")
+            if unknown:
+                st.info("Check these items next: " + ", ".join(unknown) + ".")
+        st.caption("This browser check uses only the answers you select. The optional local Windows version can read these settings directly from your PC.")
     else:
         st.info("Checks include Windows version, memory, system-drive space, firewall state, Microsoft Defender status, and recent installed updates.")
         if st.button("Check this PC", type="primary"):

@@ -25,5 +25,5 @@ Connect this GitHub repository, choose the `main` branch, and set the app file t
 - Sample records are marked simulated. Uploaded data is user-provided and its source is not independently verified.
 - The original React app's Clerk authentication, PostgreSQL-backed Node API, monitoring-agent enrollment, and cross-user persistence are not connected here.
 - The Streamlit Community Cloud instance cannot read a visitor's computer. Local Windows event collection is available only when this app is running on that Windows computer; it is a one-time collection, not continuous background monitoring.
-- On the hosted site, Windows event collection, device health checks, and local investigation storage are unavailable. They require running the app locally on Windows.
+- On the hosted site, the Device health page provides a private browser-based self-check. Direct Windows event collection, direct device-health checks, and local investigation storage require running the app locally on Windows.
 - Scans run transparent rule-based checks against the session's stored events; there is no trained or evaluated ML model, live endpoint collection, or remediation.
