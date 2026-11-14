@@ -53,3 +53,7 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Local-only CyberGuard case records and Python cache
+cyberguard-local.db
+__pycache__/

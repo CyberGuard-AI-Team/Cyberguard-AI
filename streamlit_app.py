@@ -5,6 +5,7 @@ import io
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import time
 import uuid
@@ -17,7 +18,7 @@ import streamlit as st
 
 st.set_page_config(page_title="CyberGuard AI | SOC Workbench", page_icon="🛡️", layout="wide")
 
-NAV = ["Overview", "Scans", "Event review", "Findings", "Analytics", "Assistant", "Devices"]
+NAV = ["Overview", "Scans", "Event review", "Findings", "Investigations", "Analytics", "Assistant", "Device health", "Devices"]
 SEVERITIES = ["Critical", "High", "Medium", "Low", "Informational"]
 COLORS = {"Critical": "#fb7185", "High": "#fb923c", "Medium": "#fbbf24", "Low": "#56d7b7", "Informational": "#94a3b8"}
 INDIA_TZ = ZoneInfo("Asia/Kolkata")
@@ -125,6 +126,13 @@ def in_window(event: dict, window: str) -> bool:
     if not isinstance(stamp, datetime):
         stamp = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
     return stamp >= datetime.now(timezone.utc) - timedelta(hours=hours)
+
+
+def local_db() -> sqlite3.Connection:
+    conn = sqlite3.connect("cyberguard-local.db")
+    conn.execute("CREATE TABLE IF NOT EXISTS cases (case_id TEXT PRIMARY KEY, finding_id TEXT, title TEXT, status TEXT, owner TEXT, notes TEXT, updated_at TEXT)")
+    conn.commit()
+    return conn
 
 
 if "events" not in st.session_state:
@@ -353,12 +361,47 @@ elif page == "Findings":
             c1, c2 = st.columns([4, 1])
             c1.markdown(f"<span class='cg-pill' style='color:{COLORS.get(finding['severity'], '#94a3b8')}'>{finding['severity']}</span> &nbsp; <span class='cg-eyebrow'>{finding['category']} · {finding['status']}</span>", unsafe_allow_html=True)
             c1.markdown(f"**What this may mean:** {finding.get('plain_summary', finding['evidence'])}\n\n**What you can do:** {finding.get('next_steps', 'Review the linked event records. This rule match is not proof of a compromise.')}")
+            c1.info("This is a rule-based alert, not confirmation that your device or account was compromised.")
             c1.caption(f"Source: {finding['source']} · {local_time(finding['timestamp'])} · {len(finding['eventIds'])} event records")
             with c2:
                 state = st.selectbox("Status", ["New", "Investigating", "Resolved", "Dismissed"], index=["New", "Investigating", "Resolved", "Dismissed"].index(finding["status"]), key=f"status-{finding['id']}", label_visibility="collapsed")
                 finding["status"] = state
             with st.expander("Evidence IDs"):
                 st.code("\n".join(finding["eventIds"]), language=None)
+
+elif page == "Investigations":
+    st.caption("Track follow-up locally. Notes and case status stay in this app's local SQLite file when run on your PC.")
+    if os.name != "nt":
+        st.warning("The hosted site cannot store private investigation notes for your PC. Run the project locally on Windows to use local case storage.")
+    else:
+        conn = local_db()
+        for finding in findings:
+            case_id = f"case-{finding['id']}"
+            existing = conn.execute("SELECT status, owner, notes FROM cases WHERE case_id=?", (case_id,)).fetchone()
+            if not existing:
+                conn.execute("INSERT INTO cases VALUES (?, ?, ?, ?, ?, ?, ?)", (case_id, finding["id"], finding["title"], "New", "Unassigned", "", local_time(datetime.now(timezone.utc))))
+        conn.commit()
+        if not findings:
+            st.info("No findings to turn into an investigation yet. Run a scan after collecting or importing events.")
+        for finding in findings:
+            case_id = f"case-{finding['id']}"
+            status, owner, notes = conn.execute("SELECT status, owner, notes FROM cases WHERE case_id=?", (case_id,)).fetchone()
+            with st.container(border=True):
+                st.markdown(f"### {finding['title']}")
+                st.write(finding.get("plain_summary", finding["evidence"]))
+                c1, c2, c3 = st.columns([1, 1, 2])
+                new_status = c1.selectbox("Case status", ["New", "Investigating", "Resolved", "Dismissed"], index=["New", "Investigating", "Resolved", "Dismissed"].index(status), key=f"case-status-{case_id}")
+                new_owner = c2.text_input("Assigned to", value=owner, key=f"case-owner-{case_id}")
+                new_notes = st.text_area("Investigation notes", value=notes, key=f"case-notes-{case_id}", placeholder="What did you check? What should happen next?")
+                if st.button("Save case", key=f"case-save-{case_id}"):
+                    conn.execute("UPDATE cases SET status=?, owner=?, notes=?, updated_at=? WHERE case_id=?", (new_status, new_owner, new_notes, local_time(datetime.now(timezone.utc)), case_id))
+                    conn.commit()
+                    st.success("Case saved on this PC.")
+        rows = conn.execute("SELECT case_id, title, status, owner, notes, updated_at FROM cases ORDER BY updated_at DESC").fetchall()
+        if rows:
+            report = pd.DataFrame(rows, columns=["Case ID", "Finding", "Status", "Assigned to", "Notes", "Updated (IST)"])
+            st.download_button("Download investigation report (CSV)", report.to_csv(index=False), "cyberguard-investigations.csv", "text/csv")
+        conn.close()
 
 elif page == "Analytics":
     st.caption("Explore the stored records with interactive time and severity filters. Uploaded sources are not independently verified.")
@@ -484,5 +527,44 @@ ConvertTo-Json -InputObject @($output) -Depth 4 -Compress
         st.caption("Selected records: Windows Security sign-in / privilege / process / service events (IDs 4624, 4625, 4672, 4688, 4697), plus System and Application warnings/errors. Maximum 500 records per channel.")
     st.markdown("### Live monitoring")
     st.write("This is a one-time collection. It does not run in the background, stream events continuously, or take response actions.")
+
+elif page == "Device health":
+    st.caption("Read-only checks on this Windows PC. Results stay in the local app session; no fixes are applied automatically.")
+    if os.name != "nt":
+        st.warning("The hosted Streamlit site runs remotely and cannot inspect your computer. Download the project and run it locally on Windows to use device health checks.")
+    else:
+        st.info("Checks include Windows version, memory, system-drive space, firewall state, Microsoft Defender status, and recent installed updates.")
+        if st.button("Check this PC", type="primary"):
+            ps = r'''$ErrorActionPreference='SilentlyContinue'; $os=Get-CimInstance Win32_OperatingSystem; $disk=Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$env:SystemDrive'"; $fw=Get-NetFirewallProfile | Select-Object Name,Enabled; $def=Get-MpComputerStatus | Select-Object AntivirusEnabled,RealTimeProtectionEnabled,AntivirusSignatureLastUpdated; $hot=Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 5 HotFixID,InstalledOn,Description; [pscustomobject]@{computer=$env:COMPUTERNAME; os=$os.Caption; version=$os.Version; memoryFreeGB=[math]::Round($os.FreePhysicalMemory/1MB,1); memoryTotalGB=[math]::Round($os.TotalVisibleMemorySize/1MB,1); drive=$env:SystemDrive; diskFreeGB=[math]::Round($disk.FreeSpace/1GB,1); diskTotalGB=[math]::Round($disk.Size/1GB,1); firewall=@($fw); defender=$def; updates=@($hot)} | ConvertTo-Json -Depth 5 -Compress'''
+            try:
+                result = subprocess.run(["powershell.exe", "-NoLogo", "-NoProfile", "-Command", ps], capture_output=True, text=True, timeout=45, check=False)
+                if result.returncode != 0 or not result.stdout.strip():
+                    st.error("Windows could not return the requested health details. Try reopening the local app.")
+                else:
+                    health = json.loads(result.stdout)
+                    st.session_state.local_health = health
+            except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+                st.error("The local health check failed. Confirm PowerShell is available.")
+        health = st.session_state.get("local_health")
+        if health:
+            st.markdown(f"### {health.get('computer', 'This PC')} · {health.get('os', 'Windows')} {health.get('version', '')}")
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Memory available", f"{health.get('memoryFreeGB', '—')} GB", f"of {health.get('memoryTotalGB', '—')} GB")
+            m2.metric(f"{health.get('drive', 'System')} free space", f"{health.get('diskFreeGB', '—')} GB", f"of {health.get('diskTotalGB', '—')} GB")
+            m3.metric("Recent updates found", len(health.get("updates", [])))
+            st.subheader("Firewall profiles")
+            for profile in health.get("firewall", []):
+                enabled = profile.get("Enabled") is True
+                (st.success if enabled else st.warning)(f"{profile.get('Name', 'Profile')}: {'On' if enabled else 'Off'}")
+            defender = health.get("defender") or {}
+            d1, d2 = st.columns(2)
+            (d1.success if defender.get("AntivirusEnabled") else d1.warning)("Microsoft Defender antivirus: " + ("On" if defender.get("AntivirusEnabled") else "Off / unavailable"))
+            (d2.success if defender.get("RealTimeProtectionEnabled") else d2.warning)("Real-time protection: " + ("On" if defender.get("RealTimeProtectionEnabled") else "Off / unavailable"))
+            st.subheader("Recent installed updates")
+            if health.get("updates"):
+                st.dataframe(pd.DataFrame(health["updates"]), use_container_width=True, hide_index=True)
+            else:
+                st.caption("No recent updates were returned by Windows.")
+            st.caption("These checks are informational and do not replace Windows Security or an IT professional's review.")
 
 st.markdown("<hr style='border-color:#2b3946;margin-top:30px'><div class='cg-eyebrow'>CYBERGUARD AI · EDUCATIONAL M.TECH SOC WORKBENCH · SAMPLE DATA IS SIMULATED</div>", unsafe_allow_html=True)
