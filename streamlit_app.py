@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -36,6 +37,12 @@ h1,h2,h3 { letter-spacing:-.04em; }
 .cg-metric-detail { color:var(--cg-muted);font-size:11px;margin-top:2px; }
 .cg-pill { display:inline-block;border-radius:6px;padding:4px 8px;font-size:10px;font-weight:800;border:1px solid currentColor; }
 .cg-mono { font-family:'DM Mono',monospace; }
+.cg-scan-visual { display:flex;align-items:center;gap:16px;border:1px solid #56d7b733;background:linear-gradient(120deg,#56d7b70c,#171f29);border-radius:13px;padding:16px 18px;margin:10px 0 14px; }
+.cg-radar { position:relative;width:46px;height:46px;flex:none;border:1px solid #56d7b766;border-radius:50%;overflow:hidden;background:radial-gradient(circle,#56d7b722 0 2px,transparent 3px),linear-gradient(90deg,transparent 49%,#56d7b733 50%,transparent 51%),linear-gradient(0deg,transparent 49%,#56d7b733 50%,transparent 51%); }
+.cg-radar:before { content:'';position:absolute;inset:2px;border-radius:50%;background:conic-gradient(from 0deg,transparent 0 72%,#56d7b799 100%);animation:cg-sweep 1.5s linear infinite; }
+.cg-radar:after { content:'';position:absolute;left:50%;top:50%;width:6px;height:6px;transform:translate(-50%,-50%);border-radius:50%;background:#56d7b7;box-shadow:0 0 12px #56d7b7;animation:cg-pulse 1s ease-in-out infinite alternate; }
+@keyframes cg-sweep { to { transform:rotate(360deg); } }
+@keyframes cg-pulse { to { opacity:.35;box-shadow:0 0 3px #56d7b7; } }
 div[data-testid="stMetric"] { background:linear-gradient(145deg,#19232d,#151e27);border:1px solid var(--cg-border);border-radius:14px;padding:14px 17px; }
 div[data-testid="stMetricLabel"] p { color:var(--cg-muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em; }
 div[data-testid="stMetricValue"] { font-weight:800; }
@@ -199,19 +206,80 @@ elif page == "Event review":
     st.download_button("Download current events as CSV", pd.DataFrame(subset).to_csv(index=False), "cyberguard-events.csv", "text/csv")
 
 elif page == "Scans":
-    st.caption("Launch rule-based analysis against stored telemetry. Scans do not connect to live endpoints.")
+    st.caption("Rule-based checks run against events stored in this app session. This cloud app cannot inspect or scan your computer.")
+    st.info("Scan scope: stored event data only. No files, processes, network ports, or live endpoints on your computer are accessed.")
+
+    def run_stored_scan(scan_type: str) -> None:
+        deep = scan_type == "deep"
+        stages = [
+            "Loading stored security event records",
+            "Reviewing authentication event sequences",
+            "Checking the 5-failures-in-15-minutes rule",
+            "Correlating any successful sign-in or privilege change",
+            "Summarizing severity and building evidence links",
+            "Finalizing stored-event scan report",
+        ] if deep else [
+            "Loading stored security event records",
+            "Reviewing authentication event sequences",
+            "Checking the 5-failures-in-15-minutes rule",
+            "Finalizing stored-event scan report",
+        ]
+        total = len(events)
+        detected: list[dict] = []
+        high_critical = 0
+        failed_logins = 0
+        evidence_links = 0
+        completed: list[str] = []
+        with st.status(f"{scan_type.title()} scan running · stored records only", expanded=True) as status:
+            st.markdown("<div class='cg-scan-visual'><div class='cg-radar'></div><div><div class='cg-eyebrow' style='color:#56d7b7'>ANALYZING STORED EVENTS</div><div style='font-size:12px;color:#dce6e8;margin-top:4px'>This animation represents staged checks over the app's event records, not a scan of your device.</div></div></div>", unsafe_allow_html=True)
+            progress = st.progress(0, text="Preparing stored-event checks…")
+            stage_log = st.empty()
+            for index, stage in enumerate(stages):
+                progress.progress(int(index / len(stages) * 100), text=stage)
+                if index == 0:
+                    total = len(events)
+                elif index == 1:
+                    failed_logins = sum(e["eventType"] == "Failed Login" for e in events)
+                elif index == 2:
+                    detected = findings_from_events(events)
+                    high_critical = sum(e["severity"] in ("High", "Critical") for e in events)
+                    evidence_links = sum(len(f.get("eventIds", [])) for f in detected)
+                elif index == 3:
+                    pass
+                elif index == 4:
+                    evidence_links = sum(len(f.get("eventIds", [])) for f in detected)
+                time.sleep(1.0 if deep else 0.9)
+                completed.append(stage)
+                stage_log.markdown("\n".join(f"✓ &nbsp; {line}" for line in completed[-4:]), unsafe_allow_html=True)
+            progress.progress(100, text="Scan complete · rule-based checks only")
+            status.update(label=f"{scan_type.title()} scan complete · {total} stored records reviewed", state="complete", expanded=True)
+
+        if not detected:
+            detected = findings_from_events(events)
+        st.session_state.findings = detected
+        st.session_state.scans.insert(0, {
+            "id": f"scan-{uuid.uuid4().hex[:8]}",
+            "type": scan_type,
+            "started": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+            "status": "Completed",
+            "progress": 100,
+            "records reviewed": total,
+            "failed logins reviewed": failed_logins,
+            "high / critical events": high_critical,
+            "rule-based findings": len(detected),
+            "evidence links": evidence_links or sum(len(f.get("eventIds", [])) for f in detected),
+            "simulated": all(e["simulated"] for e in events),
+        })
+        st.success(f"{scan_type.title()} scan finished: reviewed {total} stored events and found {len(detected)} rule-based finding(s). No operating-system scan was performed.")
+
     with st.container(border=True):
         st.subheader("Launch analysis")
         c1, c2, c3 = st.columns([3, 1, 1])
-        c1.write("Select scope for stored-event analysis. Model signals are excluded.")
+        c1.write(f"Current scope: {len(events)} stored event records. A scan takes a few seconds to show each review stage. Model signals and operating-system access are excluded.")
         if c2.button("Quick scan", use_container_width=True):
-            st.session_state.findings = findings_from_events(events)
-            st.session_state.scans.insert(0, {"id": f"scan-{uuid.uuid4().hex[:8]}", "type": "quick", "started": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"), "status": "Completed", "progress": 100, "threats": len(st.session_state.findings), "anomalies": sum(e["severity"] in ("High", "Critical") for e in events), "simulated": all(e["simulated"] for e in events)})
-            st.success("Quick scan completed. Rule-based indicators only.")
+            run_stored_scan("quick")
         if c3.button("Deep scan", type="primary", use_container_width=True):
-            st.session_state.findings = findings_from_events(events)
-            st.session_state.scans.insert(0, {"id": f"scan-{uuid.uuid4().hex[:8]}", "type": "deep", "started": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"), "status": "Completed", "progress": 100, "threats": len(st.session_state.findings), "anomalies": sum(e["severity"] in ("High", "Critical") for e in events), "simulated": all(e["simulated"] for e in events)})
-            st.success("Deep scan completed. Rule-based indicators only.")
+            run_stored_scan("deep")
     st.subheader("Recent scan records")
     if st.session_state.scans:
         st.dataframe(pd.DataFrame(st.session_state.scans), use_container_width=True, hide_index=True)
