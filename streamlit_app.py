@@ -20,8 +20,8 @@ from sklearn.ensemble import IsolationForest
 
 st.set_page_config(page_title="CyberGuard AI | SOC Workbench", page_icon="🛡️", layout="wide")
 
-NAV = ["Overview", "About CyberGuard", "Scans", "Event review", "Findings", "Investigations", "Analytics", "ML Lab", "Assistant", "Devices"]
-PAGE_LABELS = {"Overview": "Home", "About CyberGuard": "About CyberGuard", "Scans": "Check my activity", "Event review": "Activity history", "Findings": "What needs attention", "Investigations": "My follow-ups", "Analytics": "Activity summary", "ML Lab": "Smart analysis", "Assistant": "Ask CyberGuard", "Devices": "Connect my PC"}
+NAV = ["Overview", "Scans", "Event review", "Findings", "Investigations", "Analytics", "ML Lab", "Assistant", "Devices"]
+PAGE_LABELS = {"Overview": "Home", "Scans": "Check my activity", "Event review": "Activity history", "Findings": "What needs attention", "Investigations": "My follow-ups", "Analytics": "Activity summary", "ML Lab": "Smart analysis", "Assistant": "Ask CyberGuard", "Devices": "Connect my PC"}
 SEVERITIES = ["Critical", "High", "Medium", "Low", "Informational"]
 COLORS = {"Critical": "#fb7185", "High": "#fb923c", "Medium": "#fbbf24", "Low": "#56d7b7", "Informational": "#94a3b8"}
 INDIA_TZ = ZoneInfo("Asia/Kolkata")
@@ -251,7 +251,13 @@ with st.sidebar:
         st.rerun()
     st.markdown("<br><div class='cg-eyebrow'>CYBERGUARD / 0.1<br>LOCAL LAB</div>", unsafe_allow_html=True)
 
-st.markdown(f"<div class='cg-eyebrow'>CYBERGUARD / YOUR SECURITY</div><h1 style='margin:.15rem 0 .2rem'>{PAGE_LABELS[page] if page != 'Overview' else 'Your security at a glance'}</h1><div style='color:#96a6ac;font-size:13px'>Simple explanations and clear next steps</div>", unsafe_allow_html=True)
+header_left, header_right = st.columns([6, 1])
+with header_left:
+    st.markdown(f"<div class='cg-eyebrow'>CYBERGUARD / YOUR SECURITY</div><h1 style='margin:.15rem 0 .2rem'>{PAGE_LABELS[page] if page != 'Overview' else 'Your security at a glance'}</h1><div style='color:#96a6ac;font-size:13px'>Simple explanations and clear next steps</div>", unsafe_allow_html=True)
+with header_right:
+    with st.popover("ⓘ About CyberGuard", use_container_width=True):
+        st.markdown("### How CyberGuard works\n1. **Add activity** — explore, upload, or collect activity records.\n2. **Check it** — use a guided check or Smart analysis to find what looks unusual.\n3. **Take action** — read the recommended next step and save follow-up notes.")
+        st.caption("Every page has an “About” panel with simple instructions for that feature.")
 if page in FEATURE_GUIDES:
     show_feature_guide(page)
 
@@ -266,39 +272,7 @@ def event_table(rows: list[dict], key: str) -> None:
     st.dataframe(frame[["When", "What happened", "Account", "How important", "Plain explanation"]], use_container_width=True, hide_index=True, key=key)
 
 
-if page == "About CyberGuard":
-    st.markdown("<div class='cg-card'><h3 style='margin-top:0'>How CyberGuard works</h3><p style='color:#aebdc2;margin-bottom:0'>CyberGuard helps you understand security activity in three simple steps: bring in activity, check what stands out, and follow up on anything unfamiliar.</p></div>", unsafe_allow_html=True)
-    step_one, step_two, step_three = st.tabs(["1 · Add activity", "2 · Check it", "3 · Take action"])
-    with step_one:
-        st.markdown("### Add or review activity\nYou can explore the included workspace activity, upload a CSV or JSON file, or connect selected Windows Event Logs when running the project locally.")
-        if st.button("Open activity history", use_container_width=True, key="about-history"):
-            set_page("Event review")
-            st.rerun()
-    with step_two:
-        st.markdown("### Let CyberGuard explain it\nUse **Check my activity** for a guided review. Use **Smart analysis** when you want AI to highlight activity that looks different from the usual pattern.")
-        a1, a2 = st.columns(2)
-        if a1.button("Check my activity", type="primary", use_container_width=True, key="about-check"):
-            set_page("Scans")
-            st.rerun()
-        if a2.button("Open smart analysis", use_container_width=True, key="about-ml"):
-            set_page("ML Lab")
-            st.rerun()
-    with step_three:
-        st.markdown("### Decide what to do\nOpen **What needs attention** for a clear explanation and suggested next step. Save your own notes in **My follow-ups** and download a report when needed.")
-        a1, a2 = st.columns(2)
-        if a1.button("See what needs attention", type="primary", use_container_width=True, key="about-findings"):
-            set_page("Findings")
-            st.rerun()
-        if a2.button("Open my follow-ups", use_container_width=True, key="about-followups"):
-            set_page("Investigations")
-            st.rerun()
-    with st.expander("What each page is for", expanded=True):
-        for feature in FEATURE_GUIDES:
-            title, description = FEATURE_GUIDES[feature]
-            st.markdown(f"**{title}:** {description}")
-    st.info("A simple rule of thumb: if the activity is familiar, you can mark it done. If it is unfamiliar, change the relevant password and contact your IT support team.")
-
-elif page == "Overview":
+if page == "Overview":
     filter_col, _ = st.columns([1, 3])
     with filter_col:
         window = st.radio("Time range", ["Past 24 hours", "Past 7 days", "All records"], horizontal=True, label_visibility="collapsed", key="overview_window")
