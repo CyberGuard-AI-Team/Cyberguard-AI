@@ -21,7 +21,7 @@ from sklearn.ensemble import IsolationForest
 st.set_page_config(page_title="CyberGuard AI | SOC Workbench", page_icon="🛡️", layout="wide")
 
 NAV = ["Overview", "Scans", "Event review", "Findings", "Investigations", "Analytics", "ML Lab", "Assistant", "Devices"]
-PAGE_LABELS = {"Overview": "Home", "Scans": "Check my activity", "Event review": "Activity history", "Findings": "What needs attention", "Investigations": "My follow-ups", "Analytics": "Activity summary", "ML Lab": "Smart analysis", "Assistant": "Ask CyberGuard", "Devices": "Connect my PC"}
+PAGE_LABELS = {"Overview": "Home", "About CyberGuard": "About CyberGuard", "Scans": "Check my activity", "Event review": "Activity history", "Findings": "What needs attention", "Investigations": "My follow-ups", "Analytics": "Activity summary", "ML Lab": "Smart analysis", "Assistant": "Ask CyberGuard", "Devices": "Connect my PC"}
 SEVERITIES = ["Critical", "High", "Medium", "Low", "Informational"]
 COLORS = {"Critical": "#fb7185", "High": "#fb923c", "Medium": "#fbbf24", "Low": "#56d7b7", "Informational": "#94a3b8"}
 INDIA_TZ = ZoneInfo("Asia/Kolkata")
@@ -238,10 +238,19 @@ events: list[dict] = st.session_state.events
 findings: list[dict] = st.session_state.findings
 active_findings = sum(f["status"] in ("New", "Investigating") for f in findings)
 
+if "workspace_page" not in st.session_state:
+    st.session_state.workspace_page = "Overview"
+if "sidebar_page" not in st.session_state:
+    st.session_state.sidebar_page = st.session_state.workspace_page if st.session_state.workspace_page in NAV else "Overview"
+
+
+def select_workspace_page() -> None:
+    st.session_state.workspace_page = st.session_state.sidebar_page
+
 with st.sidebar:
     st.markdown('<div class="cg-brand">CYBERGUARD<span> AI</span></div><div class="cg-eyebrow">SOC workbench / M.Tech</div>', unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
-    page = st.radio("MENU", NAV, format_func=lambda item: PAGE_LABELS[item], label_visibility="visible", key="workspace_page")
+    st.radio("MENU", NAV, format_func=lambda item: PAGE_LABELS[item], label_visibility="visible", key="sidebar_page", on_change=select_workspace_page)
     st.markdown("---")
     st.markdown("<div class='cg-eyebrow'>MODEL / ANALYTICS</div><p style='font-size:12px;color:#56d7b7'>● Telemetry workspace ready</p><p style='font-size:11px;color:#96a6ac'>Isolation Forest · unsupervised anomaly scoring</p>", unsafe_allow_html=True)
     if st.button("↻  Reset simulated data", use_container_width=True):
@@ -251,13 +260,18 @@ with st.sidebar:
         st.rerun()
     st.markdown("<br><div class='cg-eyebrow'>CYBERGUARD / 0.1<br>LOCAL LAB</div>", unsafe_allow_html=True)
 
+page = st.session_state.workspace_page
 header_left, header_right = st.columns([6, 1])
 with header_left:
     st.markdown(f"<div class='cg-eyebrow'>CYBERGUARD / YOUR SECURITY</div><h1 style='margin:.15rem 0 .2rem'>{PAGE_LABELS[page] if page != 'Overview' else 'Your security at a glance'}</h1><div style='color:#96a6ac;font-size:13px'>Simple explanations and clear next steps</div>", unsafe_allow_html=True)
 with header_right:
-    with st.popover("ⓘ About CyberGuard", use_container_width=True):
-        st.markdown("### How CyberGuard works\n1. **Add activity** — explore, upload, or collect activity records.\n2. **Check it** — use a guided check or Smart analysis to find what looks unusual.\n3. **Take action** — read the recommended next step and save follow-up notes.")
-        st.caption("Every page has an “About” panel with simple instructions for that feature.")
+    if page == "About CyberGuard":
+        if st.button("← Back", use_container_width=True):
+            set_page(st.session_state.sidebar_page)
+            st.rerun()
+    elif st.button("ⓘ About CyberGuard", use_container_width=True):
+        set_page("About CyberGuard")
+        st.rerun()
 if page in FEATURE_GUIDES:
     show_feature_guide(page)
 
@@ -272,7 +286,35 @@ def event_table(rows: list[dict], key: str) -> None:
     st.dataframe(frame[["When", "What happened", "Account", "How important", "Plain explanation"]], use_container_width=True, hide_index=True, key=key)
 
 
-if page == "Overview":
+if page == "About CyberGuard":
+    st.markdown("<div class='cg-card'><h2 style='margin-top:0'>CyberGuard AI</h2><p style='color:#aebdc2;font-size:15px'>A simple cybersecurity workspace that turns activity records into understandable advice. It is designed for people who want to know what happened, whether it matters, and what to do next.</p></div>", unsafe_allow_html=True)
+    journey, features, data = st.tabs(["How it works", "What each feature does", "Your data and results"])
+    with journey:
+        st.markdown("### A simple four-step journey")
+        steps = st.columns(4)
+        for col, title, body in zip(steps, ["1. Add activity", "2. Check it", "3. Understand it", "4. Follow up"], ["Review the workspace activity, upload a file, or collect selected Windows logs locally.", "Run a quick activity check or use Smart analysis to identify unusual patterns.", "Open What needs attention for a plain explanation and recommended next step.", "Save notes in My follow-ups and download a report when you need one."]):
+            col.markdown(f"<div class='cg-card'><b>{title}</b><div style='color:#aebdc2;font-size:12px;margin-top:8px'>{body}</div></div>", unsafe_allow_html=True)
+        a1, a2, a3 = st.columns(3)
+        if a1.button("Add or review activity", use_container_width=True, key="about-history"):
+            set_page("Event review")
+            st.rerun()
+        if a2.button("Run an activity check", type="primary", use_container_width=True, key="about-check"):
+            set_page("Scans")
+            st.rerun()
+        if a3.button("See next steps", use_container_width=True, key="about-findings"):
+            set_page("Findings")
+            st.rerun()
+    with features:
+        st.markdown("### Project functionality")
+        for feature in FEATURE_GUIDES:
+            title, description = FEATURE_GUIDES[feature]
+            st.markdown(f"<div class='cg-card'><b>{title}</b><div style='color:#aebdc2;font-size:13px;margin-top:7px'>{description}</div></div>", unsafe_allow_html=True)
+    with data:
+        st.markdown("### What happens when you use CyberGuard")
+        st.markdown("**Activity history** works with the records in the current workspace. **Check my activity** uses clear security rules to look for sign-in patterns. **Smart analysis** uses an Isolation Forest model to rank records that differ from the current activity pattern. **What needs attention** turns those results into plain language.\n\nWhen you use the hosted app, follow-up notes are saved in your browser and can be downloaded as a CSV file. Windows Event Log collection is available only when the project runs locally on a Windows computer.")
+        st.info("CyberGuard helps you decide what to review first. For an unfamiliar sign-in or a possible account issue, change the password and contact your IT support team.")
+
+elif page == "Overview":
     filter_col, _ = st.columns([1, 3])
     with filter_col:
         window = st.radio("Time range", ["Past 24 hours", "Past 7 days", "All records"], horizontal=True, label_visibility="collapsed", key="overview_window")

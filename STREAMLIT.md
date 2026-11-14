@@ -9,7 +9,7 @@ This folder-level app is an educational Streamlit port of the CyberGuard AI SOC 
 3. Read **What needs attention** for a plain-language explanation and suggested next action.
 4. Use **My follow-ups** to record what you checked and download a case report.
 
-The app includes an **About CyberGuard** guide in the top-right corner and an **About this page** panel on every feature screen for first-time users.
+The app includes a full **About CyberGuard** section opened from the top-right corner. It explains the four-step workflow, every feature, the model's role, and how the app handles activity and follow-up notes. Every feature screen also has an **About this page** panel for first-time users.
 
 ## Run locally
 
