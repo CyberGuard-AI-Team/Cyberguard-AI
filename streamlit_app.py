@@ -21,6 +21,7 @@ from sklearn.ensemble import IsolationForest
 st.set_page_config(page_title="CyberGuard AI | SOC Workbench", page_icon="🛡️", layout="wide")
 
 NAV = ["Overview", "Scans", "Event review", "Findings", "Investigations", "Analytics", "ML Lab", "Assistant", "Devices"]
+PAGE_LABELS = {"Overview": "Home", "Scans": "Check my activity", "Event review": "Activity history", "Findings": "What needs attention", "Investigations": "My follow-ups", "Analytics": "Activity summary", "ML Lab": "Smart analysis", "Assistant": "Ask CyberGuard", "Devices": "Connect my PC"}
 SEVERITIES = ["Critical", "High", "Medium", "Low", "Informational"]
 COLORS = {"Critical": "#fb7185", "High": "#fb923c", "Medium": "#fbbf24", "Low": "#56d7b7", "Informational": "#94a3b8"}
 INDIA_TZ = ZoneInfo("Asia/Kolkata")
@@ -221,7 +222,7 @@ active_findings = sum(f["status"] in ("New", "Investigating") for f in findings)
 with st.sidebar:
     st.markdown('<div class="cg-brand">CYBERGUARD<span> AI</span></div><div class="cg-eyebrow">SOC workbench / M.Tech</div>', unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
-    page = st.radio("WORKSPACE", NAV, label_visibility="visible", key="workspace_page")
+    page = st.radio("MENU", NAV, format_func=lambda item: PAGE_LABELS[item], label_visibility="visible", key="workspace_page")
     st.markdown("---")
     st.markdown("<div class='cg-eyebrow'>MODEL / ANALYTICS</div><p style='font-size:12px;color:#56d7b7'>● Telemetry workspace ready</p><p style='font-size:11px;color:#96a6ac'>Isolation Forest · unsupervised anomaly scoring</p>", unsafe_allow_html=True)
     if st.button("↻  Reset simulated data", use_container_width=True):
@@ -231,7 +232,7 @@ with st.sidebar:
         st.rerun()
     st.markdown("<br><div class='cg-eyebrow'>CYBERGUARD / 0.1<br>LOCAL LAB</div>", unsafe_allow_html=True)
 
-st.markdown(f"<div class='cg-eyebrow'>CYBERGUARD / WORKSPACE</div><h1 style='margin:.15rem 0 .2rem'>{page if page != 'Overview' else 'Security posture'}</h1><div style='color:#96a6ac;font-size:13px'>Security operations analytics workspace</div>", unsafe_allow_html=True)
+st.markdown(f"<div class='cg-eyebrow'>CYBERGUARD / YOUR SECURITY</div><h1 style='margin:.15rem 0 .2rem'>{PAGE_LABELS[page] if page != 'Overview' else 'Your security at a glance'}</h1><div style='color:#96a6ac;font-size:13px'>Simple explanations and clear next steps</div>", unsafe_allow_html=True)
 
 
 def event_table(rows: list[dict], key: str) -> None:
@@ -240,8 +241,8 @@ def event_table(rows: list[dict], key: str) -> None:
         return
     frame = pd.DataFrame(rows).copy()
     frame["timestamp"] = frame["timestamp"].map(lambda x: local_time(x) if isinstance(x, datetime) else str(x))
-    frame = frame.rename(columns={"eventId": "Event ID", "timestamp": "Time", "eventType": "Type", "user": "Actor", "sourceIp": "Source IP", "severity": "Severity", "status": "Status", "description": "Evidence", "simulated": "Simulated"})
-    st.dataframe(frame[["Event ID", "Time", "Type", "Actor", "Source IP", "Severity", "Status", "Evidence", "Simulated"]], use_container_width=True, hide_index=True, key=key)
+    frame = frame.rename(columns={"timestamp": "When", "eventType": "What happened", "user": "Account", "severity": "How important", "description": "Plain explanation"})
+    st.dataframe(frame[["When", "What happened", "Account", "How important", "Plain explanation"]], use_container_width=True, hide_index=True, key=key)
 
 
 if page == "Overview":
@@ -249,32 +250,26 @@ if page == "Overview":
     with filter_col:
         window = st.radio("Time range", ["Past 24 hours", "Past 7 days", "All records"], horizontal=True, label_visibility="collapsed", key="overview_window")
     visible_events = [e for e in events if in_window(e, window)]
-    anomalies = sum(e["severity"] in ("High", "Critical") for e in visible_events)
-    failed = sum(e["eventType"] == "Failed Login" for e in visible_events)
-    critical = sum(e["severity"] == "Critical" for e in visible_events)
-    cols = st.columns(4)
-    for col, label, value, detail in zip(cols, ["Events in range", "Active findings", "High / critical", "Failed logins"], [len(visible_events), active_findings, anomalies, failed], [window, "Open investigation states", "In selected range", "In selected range"]):
-        col.markdown(f"<div class='cg-metric'><div class='cg-metric-label'>{label}</div><div class='cg-metric-value'>{value}</div><div class='cg-metric-detail'>{detail}</div></div>", unsafe_allow_html=True)
-        st.markdown("<div class='cg-eyebrow' style='margin:18px 0 8px'>QUICK ACTIONS</div>", unsafe_allow_html=True)
+    st.markdown("<div class='cg-eyebrow' style='margin:18px 0 8px'>START HERE</div>", unsafe_allow_html=True)
+    if active_findings:
+        st.markdown("<div class='cg-card'><b>There is activity worth checking.</b><div style='color:#96a6ac;font-size:13px;margin-top:8px'>Open “What needs attention” to see a plain-language explanation and the safest next step.</div></div>", unsafe_allow_html=True)
+    else:
+        st.markdown("<div class='cg-card'><b>No urgent activity needs your attention right now.</b><div style='color:#96a6ac;font-size:13px;margin-top:8px'>You can still review recent activity or run a check whenever you want.</div></div>", unsafe_allow_html=True)
     actions = st.columns(3)
-    actions[0].button("⌕  Review event log", use_container_width=True, on_click=set_page, args=("Event review",))
-    actions[1].button("◉  Open scan lab", type="primary", use_container_width=True, on_click=set_page, args=("Scans",))
-    actions[2].button("▥  Explore analytics", use_container_width=True, on_click=set_page, args=("Analytics",))
+    actions[0].button("See recent activity", use_container_width=True, on_click=set_page, args=("Event review",))
+    actions[1].button("Check my activity", type="primary", use_container_width=True, on_click=set_page, args=("Scans",))
+    actions[2].button("See what needs attention", use_container_width=True, on_click=set_page, args=("Findings",))
     a, b = st.columns([1.45, 1])
     with a:
-        st.subheader(f"Recent events · {window.lower()}")
+        st.subheader("Recent activity")
         event_table(visible_events[:5], "overview-events")
     with b:
-        st.subheader("Investigation queue")
+        st.subheader("Your next steps")
         if findings:
             for f in findings[:5]:
-                st.markdown(f"<div class='cg-card'><span class='cg-pill' style='color:{COLORS.get(f['severity'], '#94a3b8')}'>{f['severity']}</span><b style='margin-left:10px'>{f['title']}</b><div style='color:#96a6ac;font-size:11px;margin-top:8px'>{f['category']} · {f['status']} · {len(f['eventIds'])} event records</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='cg-card'><b>{f['title']}</b><div style='color:#96a6ac;font-size:12px;margin-top:8px'>{f.get('next_steps', 'Open this item to see what to do next.')}</div></div>", unsafe_allow_html=True)
         else:
-            st.info("No findings returned.")
-    q1, q2, q3 = st.columns(3)
-    q1.metric("Critical event count", critical, "Stored severity aggregate")
-    q2.metric("Endpoint readiness", "No live device", "No agent heartbeat received")
-    q3.metric("Model state", "Not evaluated", "No accuracy claim is made")
+            st.info("Nothing needs action right now.")
     st.caption("Last scan: " + (st.session_state.scans[0]["started"] if st.session_state.scans else "Not available") + " · Time zone: IST (UTC+05:30).")
 
 elif page == "Event review":
@@ -339,8 +334,7 @@ elif page == "Event review":
     st.download_button("Download current events as CSV", pd.DataFrame(subset).to_csv(index=False), "cyberguard-events.csv", "text/csv")
 
 elif page == "Scans":
-    st.caption("Rule-based checks run against events stored in this app session. This cloud app cannot inspect or scan your computer.")
-    st.info("Scan scope: stored event data only. No files, processes, network ports, or live endpoints on your computer are accessed.")
+    st.caption("Run a quick check to find sign-in activity that may need your attention.")
 
     def run_stored_scan(scan_type: str) -> None:
         deep = scan_type == "deep"
@@ -403,37 +397,36 @@ elif page == "Scans":
             "evidence links": evidence_links or sum(len(f.get("eventIds", [])) for f in detected),
             "simulated": all(e["simulated"] for e in events),
         })
-        st.success(f"{scan_type.title()} scan finished: reviewed {total} stored events and found {len(detected)} rule-based finding(s). No operating-system scan was performed.")
+        st.success("Your activity check is complete. Open “What needs attention” to see clear next steps.")
 
     with st.container(border=True):
-        st.subheader("Launch analysis")
+        st.subheader("Check your activity")
         c1, c2, c3 = st.columns([3, 1, 1])
-        c1.write(f"Current scope: {len(events)} stored event records. A scan takes a few seconds to show each review stage. Model signals and operating-system access are excluded.")
-        if c2.button("Quick scan", use_container_width=True):
+        c1.write("CyberGuard checks the activity currently shown in this workspace and turns it into simple advice.")
+        if c2.button("Quick check", use_container_width=True):
             run_stored_scan("quick")
-        if c3.button("Deep scan", type="primary", use_container_width=True):
+        if c3.button("Detailed check", type="primary", use_container_width=True):
             run_stored_scan("deep")
-    st.subheader("Recent scan records")
+    st.subheader("Past checks")
     if st.session_state.scans:
         st.dataframe(pd.DataFrame(st.session_state.scans), use_container_width=True, hide_index=True)
     else:
-        st.info("No scans recorded. Start a Quick or Deep scan to analyze stored telemetry.")
+        st.info("No activity checks have been run yet.")
 
 elif page == "Findings":
-    st.caption("Each rule-based finding links to stored event IDs. Findings are indicators, not proof of compromise.")
+    st.caption("These are the things worth looking at first. Each card explains what happened and what you can do.")
     if not findings:
         st.info("No findings to investigate. A scan can evaluate the stored records.")
     for finding in findings:
         with st.container(border=True):
             c1, c2 = st.columns([4, 1])
-            c1.markdown(f"<span class='cg-pill' style='color:{COLORS.get(finding['severity'], '#94a3b8')}'>{finding['severity']}</span> &nbsp; <span class='cg-eyebrow'>{finding['category']} · {finding['status']}</span>", unsafe_allow_html=True)
-            c1.markdown(f"**What this may mean:** {finding.get('plain_summary', finding['evidence'])}\n\n**What you can do:** {finding.get('next_steps', 'Review the linked event records. This rule match is not proof of a compromise.')}")
-            c1.info("This is a rule-based alert, not confirmation that your device or account was compromised.")
-            c1.caption(f"Source: {finding['source']} · {local_time(finding['timestamp'])} · {len(finding['eventIds'])} event records")
+            c1.markdown(f"<span class='cg-pill' style='color:{COLORS.get(finding['severity'], '#94a3b8')}'>{finding['severity']} priority</span>", unsafe_allow_html=True)
+            c1.markdown(f"### {finding['title']}\n**What happened:** {finding.get('plain_summary', finding['evidence'])}\n\n**What to do now:** {finding.get('next_steps', 'Open the activity details and review this item.')}")
+            c1.caption(f"Noticed {local_time(finding['timestamp'])}")
             with c2:
-                state = st.selectbox("Status", ["New", "Investigating", "Resolved", "Dismissed"], index=["New", "Investigating", "Resolved", "Dismissed"].index(finding["status"]), key=f"status-{finding['id']}", label_visibility="collapsed")
+                state = st.selectbox("My progress", ["New", "Investigating", "Resolved", "Dismissed"], format_func=lambda item: {"New": "Needs attention", "Investigating": "I am checking", "Resolved": "Done", "Dismissed": "Ignore"}[item], index=["New", "Investigating", "Resolved", "Dismissed"].index(finding["status"]), key=f"status-{finding['id']}")
                 finding["status"] = state
-            with st.expander("Evidence IDs"):
+            with st.expander("Technical details for IT support"):
                 st.code("\n".join(finding["eventIds"]), language=None)
 
 elif page == "Investigations":
@@ -471,7 +464,7 @@ elif page == "Investigations":
         conn.close()
 
 elif page == "Analytics":
-    st.caption("Explore the stored records with interactive time and severity filters. Uploaded sources are not independently verified.")
+    st.caption("See simple patterns in your activity. Use the filters to focus on a time period or level of importance.")
     f1, f2 = st.columns([1, 2])
     window = f1.radio("Time range", ["Past 24 hours", "Past 7 days", "All records"], horizontal=True, label_visibility="collapsed", key="analytics_window")
     selected_severities = f2.multiselect("Severities", SEVERITIES, default=SEVERITIES, placeholder="Choose severities")
@@ -481,9 +474,9 @@ elif page == "Analytics":
     else:
         df = pd.DataFrame(filtered_events)
         cols = st.columns(4)
-        for col, label, val in zip(cols, ["Events in view", "High / critical", "Unique actors", "Unique source IPs"], [len(filtered_events), int(df["severity"].isin(["High", "Critical"]).sum()), df["user"].nunique(), df["sourceIp"].replace("", pd.NA).nunique()]):
+        for col, label, val in zip(cols, ["Activity records", "Needs attention", "Accounts involved", "Places activity came from"], [len(filtered_events), int(df["severity"].isin(["High", "Critical"]).sum()), df["user"].nunique(), df["sourceIp"].replace("", pd.NA).nunique()]):
             col.metric(label, val)
-        severity_tab, type_tab, activity_tab = st.tabs(["Severity breakdown", "Event types", "Activity timeline"])
+        severity_tab, type_tab, activity_tab = st.tabs(["What needs attention", "What happened", "When it happened"])
         with severity_tab:
             counts = df["severity"].value_counts().reindex(SEVERITIES, fill_value=0)
             st.bar_chart(counts, color="#56d7b7")
@@ -499,44 +492,46 @@ elif page == "Analytics":
             st.caption("Times are shown in Indian Standard Time (IST, UTC+05:30). Hover over the plot to inspect values.")
 
 elif page == "ML Lab":
-    st.caption("Unsupervised anomaly detection over the stored telemetry. This model ranks unusual records; it does not confirm an attack.")
+    st.caption("CyberGuard looks for activity that is different from the usual pattern, then explains why it deserves a closer look.")
     if len(events) < 8:
         st.info("Add at least 8 event records to create an anomaly baseline.")
     else:
         c1, c2 = st.columns([2, 1])
-        sensitivity = c1.select_slider("Detection sensitivity", options=["Conservative", "Balanced", "Sensitive"], value="Balanced")
-        contamination = {"Conservative": 0.05, "Balanced": 0.10, "Sensitive": 0.20}[sensitivity]
-        c2.metric("Telemetry records", len(events))
-        if st.button("Run anomaly model", type="primary", use_container_width=True):
+        sensitivity = c1.select_slider("How much should CyberGuard flag?", options=["Only unusual", "Balanced", "Show more"], value="Balanced")
+        contamination = {"Only unusual": 0.05, "Balanced": 0.10, "Show more": 0.20}[sensitivity]
+        c2.metric("Activity reviewed", len(events))
+        if st.button("Find unusual activity", type="primary", use_container_width=True):
             st.session_state.ml_results = anomaly_scores(events, contamination)
             st.session_state.ml_sensitivity = sensitivity
         results = st.session_state.get("ml_results")
         if results is None:
-            st.info("Run the model to rank records using time, severity, event rarity, account rarity, source-address rarity, and event categories.")
+            st.info("Choose “Find unusual activity” to get a simple list of items worth checking first.")
         else:
             anomalies = results[results["model_label"] == "Anomalous"]
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Anomalies flagged", len(anomalies))
-            m2.metric("Highest anomaly score", f"{results['anomaly_score'].max():.0f}/100")
-            m3.metric("Model sensitivity", st.session_state.get("ml_sensitivity", sensitivity))
-            st.markdown("### Ranked event records")
-            display = results.rename(columns={"id": "Event ID", "timestamp": "Time (IST)", "eventType": "Event type", "user": "Account", "sourceIp": "Source IP", "severity": "Severity", "anomaly_score": "Anomaly score", "model_label": "Model label", "explanation": "Why it stands out"})
-            st.dataframe(display, use_container_width=True, hide_index=True, column_config={"Anomaly score": st.column_config.NumberColumn(format="%.1f / 100")})
-            st.download_button("Download model results (CSV)", display.to_csv(index=False), "cyberguard-anomaly-results.csv", "text/csv")
-            with st.expander("Model design and limits"):
+            if anomalies.empty:
+                st.success("Nothing looked unusual in this activity set.")
+            else:
+                st.warning("Some activity looks different from the usual pattern. Review the items below first.")
+            st.markdown("### Things to review first")
+            display = results.copy()
+            display["Priority"] = display["model_label"].map({"Anomalous": "Review first", "Baseline": "Normal pattern"})
+            display = display.rename(columns={"timestamp": "When", "eventType": "What happened", "user": "Account", "sourceIp": "Source IP", "severity": "Importance", "explanation": "Why it stands out"})[["Priority", "When", "What happened", "Account", "Importance", "Why it stands out"]]
+            st.dataframe(display, use_container_width=True, hide_index=True)
+            st.download_button("Download this review list (CSV)", display.to_csv(index=False), "cyberguard-review-list.csv", "text/csv")
+            with st.expander("Technical details for your M.Tech project"):
                 st.markdown("**Algorithm:** Isolation Forest with 200 trees and a fixed random seed for repeatable classroom demonstrations.\n\n**Features:** hour of event, severity weight, frequency of the event type, account, and source address, plus one-hot encoded event type, account, source address, and status.\n\n**Interpretation:** the anomaly score is a relative rank within the records currently loaded into the app. It is not a probability of compromise, and results should be reviewed with the linked evidence.")
 
 elif page == "Assistant":
-    st.caption("Answers are derived only from currently stored records. This is a simple evidence lookup, not an evaluated ML model.")
+    st.caption("Ask a question in everyday language. CyberGuard will explain the activity shown in this workspace.")
     for item in st.session_state.chat:
         with st.chat_message(item["role"]):
             st.markdown(item["content"])
             if item.get("evidence"):
                 st.caption("Evidence IDs: " + ", ".join(item["evidence"]))
-    for suggestion in ["Which stored events support the latest finding?", "What evidence is available for failed logins?", "Summarize events linked to an event ID."]:
+    for suggestion in ["What should I look at first?", "Explain the failed sign-ins simply", "What happened recently?"]:
         if st.button(suggestion, key=f"suggest-{suggestion}"):
             st.session_state.pending_question = suggestion
-    question = st.chat_input("Ask about an event, finding, or evidence ID…")
+    question = st.chat_input("For example: What should I do next?")
     if question is None and st.session_state.get("pending_question"):
         question = st.session_state.pop("pending_question")
     if question:
@@ -547,6 +542,8 @@ elif page == "Assistant":
             if (any(ch.isdigit() for ch in question) and question.strip() in (e["eventId"], e["id"])) or ("login" in q or "sign-in" in q or "failed" in q) and "login" in e["eventType"].lower() or ("today" in q or "recent" in q or "summary" in q) and e["timestamp"] >= datetime.now(timezone.utc) - timedelta(days=1):
                 matches.append(e)
         related = next((f for f in findings if f["status"] in ("New", "Investigating") and set(f["eventIds"]) & {e["id"] for e in matches}), None)
+        if related is None and ("first" in q or "next" in q or "help" in q):
+            related = next((f for f in findings if f["status"] in ("New", "Investigating")), None)
         if related:
             answer = related["title"] + ". " + related.get("plain_summary", related["evidence"]) + " What you can do: " + related.get("next_steps", "Review the linked records. This rule match is not proof of compromise.")
         elif matches:
@@ -557,7 +554,7 @@ elif page == "Assistant":
         evidence = [e["id"] for e in matches[:8]]
         st.session_state.chat.append({"role": "assistant", "content": answer, "evidence": evidence})
         st.rerun()
-    st.info("Boundaries: stored context only · citations are event IDs, not proof of causality · model not trained or evaluated · no live endpoint actions.")
+    st.info("Answers are based on the activity in this workspace. If something feels unfamiliar, change your password and contact your IT support team.")
 
 elif page == "Devices":
     st.caption("One-time local Windows Event Log collection. No log data is sent to CyberGuard cloud services.")
