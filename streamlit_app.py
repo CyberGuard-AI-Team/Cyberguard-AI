@@ -468,12 +468,14 @@ def select_workspace_page() -> None:
     set_page(st.session_state.sidebar_page)
 
 with st.sidebar:
-    st.markdown('<div class="cg-brand">CYBERGUARD<span> AI</span></div><div class="cg-eyebrow">SOC workbench / M.Tech</div>', unsafe_allow_html=True)
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown(f"<div class='cg-user-card'><div class='cg-eyebrow'>SIGNED IN AS</div><div class='cg-user-name'>{st.session_state.auth_display_name}</div><div style='font-size:11px;color:#96a6ac'>@{st.session_state.auth_username}</div></div>", unsafe_allow_html=True)
-    account_col, logout_col = st.columns(2)
-    account_col.button("My profile", use_container_width=True, on_click=set_page, args=("Profile",))
-    logout_col.button("Sign out", use_container_width=True, on_click=sign_out)
+    brand_col, account_menu_col = st.columns([5, 1])
+    with brand_col:
+        st.markdown('<div class="cg-brand">CYBERGUARD<span> AI</span></div><div class="cg-eyebrow">SOC workbench / M.Tech</div>', unsafe_allow_html=True)
+    with account_menu_col:
+        with st.popover("⋮", help="Open account menu", use_container_width=True):
+            st.markdown(f"<div class='cg-user-card'><div class='cg-eyebrow'>SIGNED IN AS</div><div class='cg-user-name'>{st.session_state.auth_display_name}</div><div style='font-size:11px;color:#96a6ac'>@{st.session_state.auth_username}</div></div>", unsafe_allow_html=True)
+            st.button("My profile", use_container_width=True, on_click=set_page, args=("Profile",))
+            st.button("Sign out", use_container_width=True, on_click=sign_out)
     st.markdown("---")
     st.radio("MENU", NAV, format_func=lambda item: PAGE_LABELS[item], label_visibility="visible", key="sidebar_page", on_change=select_workspace_page)
     st.markdown("---")
