@@ -707,7 +707,9 @@ ConvertTo-Json -InputObject @($output) -Depth 4 -Compress
         st.markdown("### Get real Windows logs")
         st.write("Download the collector, run it once on your Windows PC, then upload the created CSV in **Activity history**.")
         st.download_button("Download Windows Log Collector", downloadable_collector_script(), "cyberguard-log-collector.ps1", "text/plain", type="primary", use_container_width=True)
-        st.markdown("1. Open your Downloads folder and right-click `cyberguard-log-collector.ps1`.\n2. Choose **Run with PowerShell**. If Windows asks, run it as Administrator.\n3. The script creates `cyberguard-real-logs.csv` on your Desktop.\n4. Return here, open **Activity history**, and upload that CSV.")
+        with st.container(border=True):
+            st.markdown("### How to use this file")
+            st.markdown("1. Click **Download Windows Log Collector** above.\n2. Open your **Downloads** folder.\n3. Right-click `cyberguard-log-collector.ps1`.\n4. Select **Run with PowerShell**. If Windows asks for permission, allow it and use Administrator access if available.\n5. Wait until PowerShell says that the file was created.\n6. Open your Desktop and find `cyberguard-real-logs.csv`.\n7. Return to this website, open **Activity history**, upload the CSV, then open **Check my activity** to analyse it.")
         st.caption("The collector reads recent Windows Security events: sign-ins, privilege changes, process starts, and service installations. A browser cannot start the downloaded file automatically; Windows requires you to approve the run.")
     st.markdown("### Live monitoring")
     st.write("This is a one-time collection. It does not run in the background, stream events continuously, or take response actions.")
