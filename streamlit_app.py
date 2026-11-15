@@ -78,6 +78,43 @@ footer { visibility:hidden; }
 """, unsafe_allow_html=True)
 
 
+LIGHT_THEME_CSS = """
+:root { --cg-bg:#f5f8fb; --cg-panel:#ffffff; --cg-border:#d4e0e8; --cg-teal:#087d68; --cg-muted:#52616d; }
+html, body, [class*="css"] { color:#17212b !important; }
+.stApp { background:radial-gradient(ellipse at 78% -12%,#d9f2eb 0,transparent 35%),var(--cg-bg) !important; color:#17212b !important; }
+section[data-testid="stSidebar"] { background:#ffffff !important; border-right-color:var(--cg-border) !important; }
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+[data-testid="stMarkdownContainer"] p,
+[data-testid="stMarkdownContainer"] li,
+label { color:#17212b !important; }
+.cg-card,.cg-metric,div[data-testid="stMetric"] { background:linear-gradient(145deg,#ffffff,#f7fafc) !important; border-color:var(--cg-border) !important; color:#17212b !important; }
+.cg-scan-visual { border-color:#087d6844 !important; background:linear-gradient(120deg,#087d6810,#ffffff) !important; }
+.cg-scan-complete { border-color:#087d6866 !important; background:linear-gradient(120deg,#087d6816,#ffffff) !important; }
+.cg-scan-complete.alert { border-color:#dc4d6466 !important; background:linear-gradient(120deg,#dc4d6412,#ffffff) !important; }
+.cg-complete-mark { color:#ffffff !important; background:#087d68 !important; }
+.cg-scan-complete.alert .cg-complete-mark { background:#dc4d64 !important; }
+.cg-notice { background:#fff9e8 !important; border-color:#d8a82555 !important; color:#795900 !important; }
+.stButton button { background:#ffffff !important; color:#17212b !important; border-color:#b9c8d2 !important; }
+.stButton button[kind="primary"] { background:#087d68 !important; color:#ffffff !important; border-color:#087d68 !important; }
+.stButton button:hover { border-color:#087d68 !important; box-shadow:0 8px 24px #087d6822 !important; }
+[data-testid="stDataFrame"] { border-color:var(--cg-border) !important; }
+[data-testid="stTextInput"] input, [data-testid="stTextArea"] textarea, [data-baseweb="select"] > div { background:#ffffff !important; color:#17212b !important; border-color:#b9c8d2 !important; }
+.stApp [style*="color:#dce6e8"] { color:#17212b !important; }
+.stApp [style*="color:#96a6ac"] { color:#52616d !important; }
+"""
+
+
+def apply_theme(preference: str) -> None:
+    """Apply the selected visual theme; device mode follows the browser setting."""
+    if preference == "Light":
+        css = LIGHT_THEME_CSS
+    elif preference == "Use device setting":
+        css = "@media (prefers-color-scheme: light) {" + LIGHT_THEME_CSS + "}"
+    else:
+        return
+    st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
+
+
 def findings_from_events(events: list[dict]) -> list[dict]:
     failed = [e for e in events if e["eventType"].lower() == "failed login"]
     groups: dict[str, list[dict]] = {}
@@ -297,6 +334,8 @@ if "sidebar_page" not in st.session_state:
     st.session_state.sidebar_page = st.session_state.workspace_page if st.session_state.workspace_page in NAV else "Overview"
 if "page_history" not in st.session_state:
     st.session_state.page_history = []
+if "theme_preference" not in st.session_state:
+    st.session_state.theme_preference = "Use device setting"
 
 
 def select_workspace_page() -> None:
@@ -307,6 +346,10 @@ with st.sidebar:
     st.markdown("<br>", unsafe_allow_html=True)
     st.radio("MENU", NAV, format_func=lambda item: PAGE_LABELS[item], label_visibility="visible", key="sidebar_page", on_change=select_workspace_page)
     st.markdown("---")
+    st.markdown("<div class='cg-eyebrow'>APPEARANCE</div>", unsafe_allow_html=True)
+    st.selectbox("Theme", ["Use device setting", "Dark", "Light"], key="theme_preference", help="Use device setting follows your browser or computer light/dark preference.")
+    st.caption("Choose a theme whenever you like.")
+    st.markdown("---")
     st.markdown("<div class='cg-eyebrow'>MODEL / ANALYTICS</div><p style='font-size:12px;color:#56d7b7'>● Telemetry workspace ready</p><p style='font-size:11px;color:#96a6ac'>Isolation Forest · unsupervised anomaly scoring</p>", unsafe_allow_html=True)
     if st.button("↻  Clear loaded logs", use_container_width=True):
         st.session_state.events = []
@@ -314,6 +357,8 @@ with st.sidebar:
         st.session_state.scans = []
         st.rerun()
     st.markdown("<br><div class='cg-eyebrow'>CYBERGUARD / 0.1<br>LOCAL LAB</div>", unsafe_allow_html=True)
+
+apply_theme(st.session_state.theme_preference)
 
 page = st.session_state.workspace_page
 header_left, header_back, header_about = st.columns([5, 1, 1])
