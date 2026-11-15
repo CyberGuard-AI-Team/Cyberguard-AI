@@ -542,6 +542,25 @@ if page == "Profile":
                 (st.success if changed else st.error)(message)
         st.caption("Your password is stored as a salted cryptographic hash, not as plain text.")
 
+    st.markdown("---")
+    st.subheader("Recent activity")
+    st.caption("This is the latest security activity and activity-check history currently loaded in your CyberGuard workspace.")
+    recent_events_col, recent_checks_col = st.columns([1.65, 1])
+    with recent_events_col:
+        st.markdown("#### Latest security records")
+        if events:
+            recent_events = sorted(events, key=lambda item: item["timestamp"], reverse=True)[:5]
+            event_table(recent_events, "profile-recent-events")
+        else:
+            st.info("No security records have been added yet. Upload logs or connect your PC to begin building your activity history.")
+    with recent_checks_col:
+        st.markdown("#### Recent checks")
+        if st.session_state.scans:
+            scan_history = pd.DataFrame(st.session_state.scans[:5]).rename(columns={"started": "When", "type": "Check", "status": "Result", "records reviewed": "Records reviewed"})
+            st.dataframe(scan_history[["When", "Check", "Result", "Records reviewed"]], use_container_width=True, hide_index=True, height=245)
+        else:
+            st.info("No activity checks have been run yet.")
+
 elif page == "About CyberGuard":
     st.markdown("<div class='cg-card'><h2 style='margin-top:0'>CyberGuard AI</h2><p style='color:#aebdc2;font-size:15px'>A simple cybersecurity workspace that turns activity records into understandable advice. It is designed for people who want to know what happened, whether it matters, and what to do next.</p></div>", unsafe_allow_html=True)
     journey, features, data = st.tabs(["How it works", "What each feature does", "Your data and results"])
