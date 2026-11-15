@@ -58,6 +58,12 @@ h1,h2,h3 { letter-spacing:-.04em; }
 .cg-radar:after { content:'';position:absolute;left:50%;top:50%;width:6px;height:6px;transform:translate(-50%,-50%);border-radius:50%;background:#56d7b7;box-shadow:0 0 12px #56d7b7;animation:cg-pulse 1s ease-in-out infinite alternate; }
 @keyframes cg-sweep { to { transform:rotate(360deg); } }
 @keyframes cg-pulse { to { opacity:.35;box-shadow:0 0 3px #56d7b7; } }
+.cg-scan-complete { display:flex;align-items:center;gap:16px;border:1px solid #56d7b766;background:linear-gradient(120deg,#56d7b71a,#171f29);border-radius:13px;padding:16px 18px;margin:10px 0 14px;animation:cg-complete-in .45s ease-out both; }
+.cg-scan-complete.alert { border-color:#fb718566;background:linear-gradient(120deg,#fb71851a,#171f29); }
+.cg-complete-mark { width:48px;height:48px;flex:none;display:grid;place-items:center;border-radius:50%;font-size:28px;font-weight:800;color:#101720;background:#56d7b7;box-shadow:0 0 0 0 #56d7b755;animation:cg-complete-pulse 1.6s ease-out infinite; }
+.cg-scan-complete.alert .cg-complete-mark { background:#fb7185;box-shadow:0 0 0 0 #fb718555; }
+@keyframes cg-complete-in { from { opacity:0;transform:translateY(8px) scale(.97); } to { opacity:1;transform:translateY(0) scale(1); } }
+@keyframes cg-complete-pulse { 60% { box-shadow:0 0 0 13px transparent; } 100% { box-shadow:0 0 0 0 transparent; } }
 div[data-testid="stMetric"] { background:linear-gradient(145deg,#19232d,#151e27);border:1px solid var(--cg-border);border-radius:14px;padding:14px 17px; }
 div[data-testid="stMetricLabel"] p { color:var(--cg-muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em; }
 div[data-testid="stMetricValue"] { font-weight:800; }
@@ -427,7 +433,8 @@ elif page == "Scans":
         evidence_links = 0
         completed: list[tuple[str, bool]] = []
         with st.status(f"{scan_type.title()} scan running · stored records only", expanded=True) as status:
-            st.markdown("<div class='cg-scan-visual'><div class='cg-radar'></div><div><div class='cg-eyebrow' style='color:#56d7b7'>ANALYZING STORED EVENTS</div><div style='font-size:12px;color:#dce6e8;margin-top:4px'>This animation represents staged checks over the app's event records, not a scan of your device.</div></div></div>", unsafe_allow_html=True)
+            scan_visual = st.empty()
+            scan_visual.markdown("<div class='cg-scan-visual'><div class='cg-radar'></div><div><div class='cg-eyebrow' style='color:#56d7b7'>ANALYZING ACTIVITY</div><div style='font-size:12px;color:#dce6e8;margin-top:4px'>CyberGuard is checking the activity in this workspace.</div></div></div>", unsafe_allow_html=True)
             progress = st.progress(0, text="Preparing stored-event checks…")
             stage_log = st.empty()
             for index, stage in enumerate(stages):
@@ -463,6 +470,11 @@ elif page == "Scans":
                 )
                 stage_log.markdown(lines, unsafe_allow_html=True)
             progress.progress(100, text="Scan complete · rule-based checks only")
+            has_attention_item = any(not passed for _, passed in completed)
+            completion_icon = "!" if has_attention_item else "✓"
+            completion_title = "CHECK COMPLETE · ATTENTION NEEDED" if has_attention_item else "CHECK COMPLETE · ALL CLEAR"
+            completion_text = "Some activity needs your attention. See the checklist below and open What needs attention for clear next steps." if has_attention_item else "The activity review is complete. No concerning pattern was found in these checks."
+            scan_visual.markdown(f"<div class='cg-scan-complete {'alert' if has_attention_item else ''}'><div class='cg-complete-mark'>{completion_icon}</div><div><div class='cg-eyebrow' style='color:{'#fb7185' if has_attention_item else '#56d7b7'}'>{completion_title}</div><div style='font-size:12px;color:#dce6e8;margin-top:4px'>{completion_text}</div></div></div>", unsafe_allow_html=True)
             status.update(label=f"{scan_type.title()} scan complete · {total} stored records reviewed", state="complete", expanded=True)
 
         if not detected:
