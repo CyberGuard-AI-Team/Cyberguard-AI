@@ -101,7 +101,20 @@ def findings_from_events(events: list[dict]) -> list[dict]:
 
 
 def set_page(page: str) -> None:
-    st.session_state.workspace_page = page
+    current = st.session_state.get("workspace_page", "Overview")
+    if page != current:
+        st.session_state.page_history.append(current)
+        st.session_state.workspace_page = page
+    if page in NAV:
+        st.session_state.sidebar_page = page
+
+
+def go_back() -> None:
+    if st.session_state.page_history:
+        previous = st.session_state.page_history.pop()
+        st.session_state.workspace_page = previous
+        if previous in NAV:
+            st.session_state.sidebar_page = previous
 
 
 FEATURE_GUIDES = {
@@ -282,10 +295,12 @@ if "workspace_page" not in st.session_state:
     st.session_state.workspace_page = "Overview"
 if "sidebar_page" not in st.session_state:
     st.session_state.sidebar_page = st.session_state.workspace_page if st.session_state.workspace_page in NAV else "Overview"
+if "page_history" not in st.session_state:
+    st.session_state.page_history = []
 
 
 def select_workspace_page() -> None:
-    st.session_state.workspace_page = st.session_state.sidebar_page
+    set_page(st.session_state.sidebar_page)
 
 with st.sidebar:
     st.markdown('<div class="cg-brand">CYBERGUARD<span> AI</span></div><div class="cg-eyebrow">SOC workbench / M.Tech</div>', unsafe_allow_html=True)
@@ -301,17 +316,15 @@ with st.sidebar:
     st.markdown("<br><div class='cg-eyebrow'>CYBERGUARD / 0.1<br>LOCAL LAB</div>", unsafe_allow_html=True)
 
 page = st.session_state.workspace_page
-header_left, header_right = st.columns([6, 1])
+header_left, header_back, header_about = st.columns([5, 1, 1])
 with header_left:
     st.markdown(f"<div class='cg-eyebrow'>CYBERGUARD / YOUR SECURITY</div><h1 style='margin:.15rem 0 .2rem'>{PAGE_LABELS[page] if page != 'Overview' else 'Your security at a glance'}</h1><div style='color:#96a6ac;font-size:13px'>Simple explanations and clear next steps</div>", unsafe_allow_html=True)
-with header_right:
-    if page == "About CyberGuard":
-        if st.button("← Back", use_container_width=True):
-            set_page(st.session_state.sidebar_page)
-            st.rerun()
-    elif st.button("ⓘ About CyberGuard", use_container_width=True):
-        set_page("About CyberGuard")
-        st.rerun()
+with header_back:
+    if page != "Overview":
+        st.button("← Back", use_container_width=True, on_click=go_back, disabled=not st.session_state.page_history)
+with header_about:
+    if page != "About CyberGuard":
+        st.button("ⓘ About", use_container_width=True, on_click=set_page, args=("About CyberGuard",))
 if page in FEATURE_GUIDES:
     show_feature_guide(page)
 
@@ -335,15 +348,9 @@ if page == "About CyberGuard":
         for col, title, body in zip(steps, ["1. Add activity", "2. Check it", "3. Understand it", "4. Follow up"], ["Upload a real log file or collect selected Windows logs locally.", "Run a quick activity check or use Smart analysis to identify unusual patterns.", "Open What needs attention for a plain explanation and recommended next step.", "Save notes in My follow-ups and download a report when you need one."]):
             col.markdown(f"<div class='cg-card'><b>{title}</b><div style='color:#aebdc2;font-size:12px;margin-top:8px'>{body}</div></div>", unsafe_allow_html=True)
         a1, a2, a3 = st.columns(3)
-        if a1.button("Add or review activity", use_container_width=True, key="about-history"):
-            set_page("Event review")
-            st.rerun()
-        if a2.button("Run an activity check", type="primary", use_container_width=True, key="about-check"):
-            set_page("Scans")
-            st.rerun()
-        if a3.button("See next steps", use_container_width=True, key="about-findings"):
-            set_page("Findings")
-            st.rerun()
+        a1.button("Add or review activity", use_container_width=True, key="about-history", on_click=set_page, args=("Event review",))
+        a2.button("Run an activity check", type="primary", use_container_width=True, key="about-check", on_click=set_page, args=("Scans",))
+        a3.button("See next steps", use_container_width=True, key="about-findings", on_click=set_page, args=("Findings",))
     with features:
         st.markdown("### Project functionality")
         for feature in FEATURE_GUIDES:
@@ -355,31 +362,43 @@ if page == "About CyberGuard":
         st.info("CyberGuard helps you decide what to review first. For an unfamiliar sign-in or a possible account issue, change the password and contact your IT support team.")
 
 elif page == "Overview":
-    filter_col, _ = st.columns([1, 3])
-    with filter_col:
-        window = st.radio("Time range", ["Past 24 hours", "Past 7 days", "All records"], horizontal=True, label_visibility="collapsed", key="overview_window")
-    visible_events = [e for e in events if in_window(e, window)]
-    st.markdown("<div class='cg-eyebrow' style='margin:18px 0 8px'>START HERE</div>", unsafe_allow_html=True)
-    if active_findings:
-        st.markdown("<div class='cg-card'><b>There is activity worth checking.</b><div style='color:#96a6ac;font-size:13px;margin-top:8px'>Open “What needs attention” to see a plain-language explanation and the safest next step.</div></div>", unsafe_allow_html=True)
+    st.markdown("<div class='cg-card'><h2 style='margin:0 0 8px'>Welcome to CyberGuard AI</h2><div style='color:#aebdc2;font-size:15px'>Start with your real Windows logs. CyberGuard will help you check them, understand anything unusual, and decide what to do next.</div></div>", unsafe_allow_html=True)
+    if not events:
+        st.markdown("### Get started in three simple steps")
+        step_one, step_two, step_three = st.columns(3)
+        step_one.markdown("<div class='cg-card'><b>1 · Get your logs</b><div style='color:#aebdc2;font-size:13px;margin-top:8px'>Download the Windows collector or use a log file you already have.</div></div>", unsafe_allow_html=True)
+        step_two.markdown("<div class='cg-card'><b>2 · Add the file</b><div style='color:#aebdc2;font-size:13px;margin-top:8px'>Upload your CSV or JSON file into Activity history.</div></div>", unsafe_allow_html=True)
+        step_three.markdown("<div class='cg-card'><b>3 · Check it</b><div style='color:#aebdc2;font-size:13px;margin-top:8px'>Run a check and read the results in plain language.</div></div>", unsafe_allow_html=True)
+        b1, b2, b3 = st.columns(3)
+        b1.button("Get Windows logs", use_container_width=True, on_click=set_page, args=("Devices",))
+        b2.button("Upload a log file", use_container_width=True, on_click=set_page, args=("Event review",))
+        b3.button("How CyberGuard works", type="primary", use_container_width=True, on_click=set_page, args=("About CyberGuard",))
+        st.info("No logs have been added yet. Start with “Get Windows logs” if this is your first time using CyberGuard.")
     else:
-        st.markdown("<div class='cg-card'><b>No urgent activity needs your attention right now.</b><div style='color:#96a6ac;font-size:13px;margin-top:8px'>You can still review recent activity or run a check whenever you want.</div></div>", unsafe_allow_html=True)
-    actions = st.columns(3)
-    actions[0].button("See recent activity", use_container_width=True, on_click=set_page, args=("Event review",))
-    actions[1].button("Check my activity", type="primary", use_container_width=True, on_click=set_page, args=("Scans",))
-    actions[2].button("See what needs attention", use_container_width=True, on_click=set_page, args=("Findings",))
-    a, b = st.columns([1.45, 1])
-    with a:
-        st.subheader("Recent activity")
-        event_table(visible_events[:5], "overview-events")
-    with b:
-        st.subheader("Your next steps")
-        if findings:
-            for f in findings[:5]:
-                st.markdown(f"<div class='cg-card'><b>{f['title']}</b><div style='color:#96a6ac;font-size:12px;margin-top:8px'>{f.get('next_steps', 'Open this item to see what to do next.')}</div></div>", unsafe_allow_html=True)
+        filter_col, _ = st.columns([1, 3])
+        with filter_col:
+            window = st.radio("Show activity from", ["Past 24 hours", "Past 7 days", "All records"], horizontal=True, label_visibility="collapsed", key="overview_window")
+        visible_events = [e for e in events if in_window(e, window)]
+        if active_findings:
+            st.markdown("<div class='cg-card'><b>There is activity worth checking.</b><div style='color:#96a6ac;font-size:13px;margin-top:8px'>Open “What needs attention” for a simple explanation and the safest next step.</div></div>", unsafe_allow_html=True)
         else:
-            st.info("Nothing needs action right now.")
-    st.caption("Last scan: " + (st.session_state.scans[0]["started"] if st.session_state.scans else "Not available") + " · Time zone: IST (UTC+05:30).")
+            st.markdown("<div class='cg-card'><b>Your latest check found nothing urgent.</b><div style='color:#96a6ac;font-size:13px;margin-top:8px'>You can review activity or run another check whenever you want.</div></div>", unsafe_allow_html=True)
+        actions = st.columns(3)
+        actions[0].button("Review my logs", use_container_width=True, on_click=set_page, args=("Event review",))
+        actions[1].button("Run a security check", type="primary", use_container_width=True, on_click=set_page, args=("Scans",))
+        actions[2].button("See what needs attention", use_container_width=True, on_click=set_page, args=("Findings",))
+        a, b = st.columns([1.45, 1])
+        with a:
+            st.subheader("Recent activity")
+            event_table(visible_events[:5], "overview-events")
+        with b:
+            st.subheader("Your next steps")
+            if findings:
+                for f in findings[:5]:
+                    st.markdown(f"<div class='cg-card'><b>{f['title']}</b><div style='color:#96a6ac;font-size:12px;margin-top:8px'>{f.get('next_steps', 'Open this item to see what to do next.')}</div></div>", unsafe_allow_html=True)
+            else:
+                st.info("Nothing needs action right now.")
+        st.caption("Last check: " + (st.session_state.scans[0]["started"] if st.session_state.scans else "Not run yet") + " · Time zone: IST (UTC+05:30).")
 
 elif page == "Event review":
     st.caption("Upload a real CSV/JSON log file, then search and inspect the records.")
