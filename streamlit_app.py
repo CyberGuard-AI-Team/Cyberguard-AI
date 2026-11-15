@@ -77,30 +77,6 @@ footer { visibility:hidden; }
 """, unsafe_allow_html=True)
 
 
-def make_demo_events() -> list[dict]:
-    now = datetime.now(timezone.utc)
-    templates = [
-        ("4624", "Successful Login", "j.wells", "Low", "Success", "Interactive sign-in completed from a known private network.", "10.20.1.15"),
-        ("4688", "Process Start", "SYSTEM", "Informational", "Observed", "A signed operating-system service process started.", "127.0.0.1"),
-        ("5156", "Network Connection", "SYSTEM", "Informational", "Allowed", "An outbound connection was permitted by the local firewall.", "10.20.1.15"),
-        ("4624", "Successful Login", "svc-backup", "Low", "Success", "A scheduled service account sign-in completed.", "10.20.1.26"),
-        ("5158", "Port Activity", "SYSTEM", "Low", "Observed", "A local process bound to an ephemeral port.", "10.20.1.15"),
-    ]
-    events = []
-    for i in range(38):
-        eid, typ, user, severity, status, desc, ip = templates[i % len(templates)]
-        events.append({"id": f"evt-{uuid.uuid4().hex[:10]}", "timestamp": now - timedelta(minutes=28 + i * 34), "eventId": eid, "eventType": typ, "user": user, "sourceIp": ip, "destinationIp": "192.0.2.40" if typ == "Network Connection" else "", "severity": severity, "status": status, "description": desc, "simulated": True})
-    ip = "198.51.100.23"
-    for i in range(9):
-        events.append({"id": f"evt-{uuid.uuid4().hex[:10]}", "timestamp": now - timedelta(minutes=36 - i * 2), "eventId": "4625", "eventType": "Failed Login", "user": "j.wells", "sourceIp": ip, "destinationIp": "", "severity": "Medium", "status": "Failed", "description": "A Windows Security log records a failed sign-in attempt. This event is simulated.", "simulated": True})
-    for eid, typ, severity, status, desc, ago in [
-        ("4624", "Successful Login", "High", "Success", "A successful sign-in followed the simulated failed-login burst from the same address.", 16),
-        ("4672", "Privilege Change", "High", "Observed", "A privileged sign-in token was assigned shortly after the simulated authentication sequence.", 14),
-    ]:
-        events.append({"id": f"evt-{uuid.uuid4().hex[:10]}", "timestamp": now - timedelta(minutes=ago), "eventId": eid, "eventType": typ, "user": "j.wells", "sourceIp": ip, "destinationIp": "", "severity": severity, "status": status, "description": desc, "simulated": True})
-    return sorted(events, key=lambda row: row["timestamp"], reverse=True)
-
-
 def findings_from_events(events: list[dict]) -> list[dict]:
     failed = [e for e in events if e["eventType"].lower() == "failed login"]
     groups: dict[str, list[dict]] = {}
@@ -119,7 +95,7 @@ def findings_from_events(events: list[dict]) -> list[dict]:
         finding_title = "Several sign-in attempts failed, then one succeeded" if success else "Several sign-in attempts failed in a short time"
         plain_summary = f"We found {len(burst)} failed sign-in attempts from {ip} within 15 minutes" + (", followed by a successful sign-in" if success else "") + (" and an account-permission change" if privileged else "") + "."
         next_steps = ("If this was not you, change the account password, sign out other sessions, and ask your IT support team to review the sign-in." if success else "If these attempts were not yours, change the account password and enable multi-factor authentication.")
-        findings.append({"id": f"finding-{ip}", "timestamp": last, "title": finding_title, "plain_summary": plain_summary, "next_steps": next_steps, "category": "Sign-in activity", "severity": "High" if success and privileged else "Medium", "source": "SIMULATED DATA · Endpoint simulator" if all(e["simulated"] for e in burst + follow) else "Collected telemetry", "evidence": plain_summary + " This is an automated rule match, not proof that someone accessed the device.", "status": "New", "eventIds": [e["id"] for e in burst + follow], "simulated": all(e["simulated"] for e in burst + follow)})
+        findings.append({"id": f"finding-{ip}", "timestamp": last, "title": finding_title, "plain_summary": plain_summary, "next_steps": next_steps, "category": "Sign-in activity", "severity": "High" if success and privileged else "Medium", "source": "Collected or uploaded logs", "evidence": plain_summary + " This is an automated rule match, not proof that someone accessed the device.", "status": "New", "eventIds": [e["id"] for e in burst + follow], "simulated": False})
     return findings
 
 
@@ -230,7 +206,7 @@ def browser_case_workspace(findings: list[dict]) -> None:
 
 
 if "events" not in st.session_state:
-    st.session_state.events = make_demo_events()
+    st.session_state.events = []
 if "findings" not in st.session_state:
     st.session_state.findings = findings_from_events(st.session_state.events)
 if "scans" not in st.session_state:
@@ -259,9 +235,9 @@ with st.sidebar:
     st.radio("MENU", NAV, format_func=lambda item: PAGE_LABELS[item], label_visibility="visible", key="sidebar_page", on_change=select_workspace_page)
     st.markdown("---")
     st.markdown("<div class='cg-eyebrow'>MODEL / ANALYTICS</div><p style='font-size:12px;color:#56d7b7'>● Telemetry workspace ready</p><p style='font-size:11px;color:#96a6ac'>Isolation Forest · unsupervised anomaly scoring</p>", unsafe_allow_html=True)
-    if st.button("↻  Reset simulated data", use_container_width=True):
-        st.session_state.events = make_demo_events()
-        st.session_state.findings = findings_from_events(st.session_state.events)
+    if st.button("↻  Clear loaded logs", use_container_width=True):
+        st.session_state.events = []
+        st.session_state.findings = []
         st.session_state.scans = []
         st.rerun()
     st.markdown("<br><div class='cg-eyebrow'>CYBERGUARD / 0.1<br>LOCAL LAB</div>", unsafe_allow_html=True)
@@ -298,7 +274,7 @@ if page == "About CyberGuard":
     with journey:
         st.markdown("### A simple four-step journey")
         steps = st.columns(4)
-        for col, title, body in zip(steps, ["1. Add activity", "2. Check it", "3. Understand it", "4. Follow up"], ["Review the workspace activity, upload a file, or collect selected Windows logs locally.", "Run a quick activity check or use Smart analysis to identify unusual patterns.", "Open What needs attention for a plain explanation and recommended next step.", "Save notes in My follow-ups and download a report when you need one."]):
+        for col, title, body in zip(steps, ["1. Add activity", "2. Check it", "3. Understand it", "4. Follow up"], ["Upload a real log file or collect selected Windows logs locally.", "Run a quick activity check or use Smart analysis to identify unusual patterns.", "Open What needs attention for a plain explanation and recommended next step.", "Save notes in My follow-ups and download a report when you need one."]):
             col.markdown(f"<div class='cg-card'><b>{title}</b><div style='color:#aebdc2;font-size:12px;margin-top:8px'>{body}</div></div>", unsafe_allow_html=True)
         a1, a2, a3 = st.columns(3)
         if a1.button("Add or review activity", use_container_width=True, key="about-history"):
@@ -348,12 +324,8 @@ elif page == "Overview":
     st.caption("Last scan: " + (st.session_state.scans[0]["started"] if st.session_state.scans else "Not available") + " · Time zone: IST (UTC+05:30).")
 
 elif page == "Event review":
-    st.caption("Search stored telemetry, narrow the view, and select a row to inspect its full evidence record.")
-    upcol, flagcol = st.columns([1, 2])
-    with upcol:
-        upload = st.file_uploader("Upload CSV / JSON", type=["csv", "json"])
-    with flagcol:
-        mark_sim = st.checkbox("These file records are simulated", value=False, help="Unchecked uploads are stored as user-provided telemetry. The source is not independently verified.")
+    st.caption("Upload a real CSV/JSON log file, then search and inspect the records.")
+    upload = st.file_uploader("Upload CSV / JSON logs", type=["csv", "json"])
     if upload is not None and st.button("Import records", type="primary"):
         try:
             raw = upload.getvalue().decode("utf-8-sig")
@@ -375,7 +347,7 @@ elif page == "Event review":
                 if stamp.tzinfo is None: stamp = stamp.replace(tzinfo=timezone.utc)
                 if item["severity"] not in SEVERITIES:
                     raise ValueError(f"Row {i} has unsupported severity.")
-                item.update({"id": f"upload-{uuid.uuid4().hex[:10]}", "timestamp": stamp.astimezone(timezone.utc), "simulated": mark_sim})
+                item.update({"id": f"upload-{uuid.uuid4().hex[:10]}", "timestamp": stamp.astimezone(timezone.utc), "simulated": False})
                 normalized.append(item)
             st.session_state.events = sorted(normalized + events, key=lambda e: e["timestamp"], reverse=True)
             st.session_state.findings = findings_from_events(st.session_state.events)
@@ -383,24 +355,23 @@ elif page == "Event review":
             st.rerun()
         except Exception as exc:
             st.error(f"Upload not imported: {exc}")
-    controls = st.columns([3, 1, 1, 1.5])
+    controls = st.columns([3, 1, 1.5])
     query = controls[0].text_input("Search event IDs, actors, IPs, or evidence", placeholder="e.g. 198.51.100.23")
     sev = controls[1].selectbox("Severity", ["All severities"] + SEVERITIES)
-    source = controls[2].selectbox("Record source", ["All records", "Simulated", "Non-simulated"])
     event_types = sorted({e["eventType"] for e in events})
-    selected_types = controls[3].multiselect("Event types", event_types, placeholder="All event types")
-    subset = [e for e in events if (sev == "All severities" or e["severity"] == sev) and (source == "All records" or e["simulated"] == (source == "Simulated")) and (not selected_types or e["eventType"] in selected_types) and (not query or query.lower() in " ".join(str(e.get(k, "")) for k in ("eventId", "eventType", "user", "sourceIp", "description")).lower())]
+    selected_types = controls[2].multiselect("Event types", event_types, placeholder="All event types")
+    subset = [e for e in events if (sev == "All severities" or e["severity"] == sev) and (not selected_types or e["eventType"] in selected_types) and (not query or query.lower() in " ".join(str(e.get(k, "")) for k in ("eventId", "eventType", "user", "sourceIp", "description")).lower())]
     st.caption(f"{len(subset)} matching records · up to 200 displayed")
     if subset:
         frame = pd.DataFrame(subset[:200]).copy()
         frame["timestamp"] = frame["timestamp"].map(lambda x: local_time(x) if isinstance(x, datetime) else str(x))
-        frame = frame.rename(columns={"eventId": "Event ID", "timestamp": "Time", "eventType": "Type", "user": "Actor", "sourceIp": "Source IP", "severity": "Severity", "status": "Status", "description": "Evidence", "simulated": "Simulated"})
-        selection = st.dataframe(frame[["Event ID", "Time", "Type", "Actor", "Source IP", "Severity", "Status", "Evidence", "Simulated"]], use_container_width=True, hide_index=True, key="event-review-table", on_select="rerun", selection_mode="single-row", height=430)
+        frame = frame.rename(columns={"eventId": "Event ID", "timestamp": "Time", "eventType": "Type", "user": "Actor", "sourceIp": "Source IP", "severity": "Severity", "status": "Status", "description": "Evidence"})
+        selection = st.dataframe(frame[["Event ID", "Time", "Type", "Actor", "Source IP", "Severity", "Status", "Evidence"]], use_container_width=True, hide_index=True, key="event-review-table", on_select="rerun", selection_mode="single-row", height=430)
         selected_rows = selection.selection.rows
         if selected_rows:
             chosen = subset[selected_rows[0]]
             st.markdown(f"#### Selected event · `{chosen['eventId']}`")
-            st.caption(f"{chosen['eventType']} · {chosen['severity']} · {'Simulated' if chosen['simulated'] else 'User-provided / collected'}")
+            st.caption(f"{chosen['eventType']} · {chosen['severity']} · Real uploaded or locally collected log")
             st.write(chosen["description"])
             with st.expander("Full event details"):
                 st.json({k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in chosen.items()})
@@ -412,6 +383,9 @@ elif page == "Scans":
     st.caption("Run a quick check to find sign-in activity that may need your attention.")
 
     def run_stored_scan(scan_type: str) -> None:
+        if not events:
+            st.warning("No real logs are loaded yet. Use Connect my PC on a local Windows run, or upload a CSV/JSON log file in Activity history.")
+            return
         deep = scan_type == "deep"
         stages = [
             "Loading stored security event records",
@@ -491,7 +465,6 @@ elif page == "Scans":
             "high / critical events": high_critical,
             "rule-based findings": len(detected),
             "evidence links": evidence_links or sum(len(f.get("eventIds", [])) for f in detected),
-            "simulated": all(e["simulated"] for e in events),
         })
         st.success("Your activity check is complete. Open “What needs attention” to see clear next steps.")
 
@@ -644,7 +617,7 @@ elif page == "Assistant":
             answer = related["title"] + ". " + related.get("plain_summary", related["evidence"]) + " What you can do: " + related.get("next_steps", "Review the linked records. This rule match is not proof of compromise.")
         elif matches:
             failed_count = sum(e["eventType"] == "Failed Login" for e in matches)
-            answer = f"{len(matches)} matching event records found" + (" in simulated telemetry" if all(e["simulated"] for e in matches) else " in stored telemetry") + (f"; {failed_count} are failed sign-in events." if failed_count else ".")
+            answer = f"{len(matches)} matching log records found" + (f"; {failed_count} are failed sign-in events." if failed_count else ".")
         else:
             answer = "I don't have enough matching evidence in the stored telemetry to determine that."
         evidence = [e["id"] for e in matches[:8]]

@@ -4,7 +4,7 @@ This folder-level app is an educational Streamlit port of the CyberGuard AI SOC 
 
 ## How CyberGuard works
 
-1. Review the included activity, upload a CSV/JSON event file, or collect selected Windows Event Logs in a local Windows run.
+1. Upload a CSV/JSON event file, or collect selected Windows Event Logs in a local Windows run.
 2. Use **Check my activity** for the guided rule checks, or **Smart analysis** for the Isolation Forest anomaly ranking.
 3. Read **What needs attention** for a plain-language explanation and suggested next action.
 4. Use **My follow-ups** to record what you checked and download a case report.
@@ -30,8 +30,7 @@ Connect this GitHub repository, choose the `main` branch, and set the app file t
 
 ## Current port boundaries
 
-- The port uses sample data in Streamlit session state. Imported CSV/JSON data is held for that browser session and is not written to the original API database.
-- Sample records are marked simulated. Uploaded data is user-provided and its source is not independently verified.
+- The app starts without logs. Imported CSV/JSON data and locally collected Windows Event Logs are held for the current session and are not written to the original API database.
 - The original React app's Clerk authentication, PostgreSQL-backed Node API, monitoring-agent enrollment, and cross-user persistence are not connected here.
 - The Streamlit Community Cloud instance cannot read a visitor's computer. Local Windows event collection is available only when this app is running on that Windows computer; it is a one-time collection, not continuous background monitoring.
 - On the hosted site, the ML Lab runs on the currently stored browser-session telemetry. Direct Windows event collection requires running the app locally on Windows. Hosted investigation notes remain in browser-local storage.
