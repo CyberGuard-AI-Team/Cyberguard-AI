@@ -13,6 +13,7 @@ import subprocess
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -88,7 +89,8 @@ footer { visibility:hidden; }
 
 def auth_db() -> sqlite3.Connection:
     """Open the small local account store used by this Streamlit application."""
-    conn = sqlite3.connect("cyberguard-users.db")
+    database_path = Path(__file__).resolve().parent / "cyberguard-users.db"
+    conn = sqlite3.connect(database_path)
     conn.execute("""CREATE TABLE IF NOT EXISTS users (
         username TEXT PRIMARY KEY,
         display_name TEXT NOT NULL,
@@ -115,14 +117,24 @@ def password_matches(password: str, stored: str) -> bool:
         return False
 
 
+def password_validation_error(password: str) -> str | None:
+    if len(password) < 8:
+        return "Password must contain at least 8 characters."
+    if "@" not in password:
+        return "Password must include the @ symbol."
+    if not any(character.isdigit() for character in password):
+        return "Password must include at least one number."
+    return None
+
+
 def create_account(display_name: str, username: str, password: str) -> tuple[bool, str]:
     display_name, username = display_name.strip(), username.strip().lower()
     if len(display_name) < 2:
         return False, "Enter the name you want to show on your profile."
     if not re.fullmatch(r"[a-z0-9._-]{3,32}", username):
         return False, "Username must be 3–32 characters: letters, numbers, dot, underscore, or hyphen."
-    if len(password) < 8:
-        return False, "Choose a password with at least 8 characters."
+    if password_error := password_validation_error(password):
+        return False, password_error
     conn = auth_db()
     try:
         conn.execute(
@@ -169,8 +181,8 @@ def update_profile(username: str, display_name: str, about: str) -> tuple[bool, 
 
 
 def change_password(username: str, current_password: str, new_password: str) -> tuple[bool, str]:
-    if len(new_password) < 8:
-        return False, "Your new password needs at least 8 characters."
+    if password_error := password_validation_error(new_password):
+        return False, password_error
     conn = auth_db()
     row = conn.execute("SELECT password_hash FROM users WHERE username=?", (username,)).fetchone()
     if not row or not password_matches(current_password, row[0]):
@@ -196,6 +208,8 @@ def show_auth_page() -> None:
     with panel:
         st.markdown("<div class='cg-auth-hero'><div class='cg-auth-badge'>🛡</div><div class='cg-eyebrow'>CYBERGUARD AI / SECURE WORKSPACE</div><h1>Welcome</h1><p style='color:#aebdc2'>Sign in to your workspace, or create a new profile to get started.</p></div>", unsafe_allow_html=True)
         mode = st.radio("Account option", ["Sign in", "Create account"], horizontal=True, label_visibility="collapsed", key="auth_mode")
+        if auth_notice := st.session_state.pop("auth_notice", None):
+            st.success(auth_notice)
         if mode == "Sign in":
             with st.form("sign-in-form"):
                 username = st.text_input("Username", placeholder="Your username")
@@ -214,8 +228,9 @@ def show_auth_page() -> None:
             with st.form("create-account-form"):
                 display_name = st.text_input("Your name", placeholder="How should CyberGuard address you?")
                 username = st.text_input("Choose a username", placeholder="e.g. rahul.sharma")
-                password = st.text_input("Create password", type="password", placeholder="At least 8 characters")
+                password = st.text_input("Create password", type="password", placeholder="8+ characters with @ and a number")
                 confirm_password = st.text_input("Confirm password", type="password")
+                st.caption("Password must have at least 8 characters, the @ symbol, and one number.")
                 submitted = st.form_submit_button("Create account", type="primary", use_container_width=True)
             if submitted:
                 if password != confirm_password:
@@ -223,9 +238,8 @@ def show_auth_page() -> None:
                 else:
                     created, result = create_account(display_name, username, password)
                     if created:
-                        st.session_state.authenticated = True
-                        st.session_state.auth_username = result
-                        st.session_state.auth_display_name = display_name.strip()
+                        st.session_state.auth_mode = "Sign in"
+                        st.session_state.auth_notice = "Account created. Your password was saved securely as a salted hash. Sign in to continue."
                         st.rerun()
                     st.error(result)
             st.caption("Already have an account? Select **Sign in** above.")
