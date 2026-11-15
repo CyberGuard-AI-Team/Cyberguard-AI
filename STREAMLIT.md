@@ -20,6 +20,8 @@ python -m pip install -r requirements.txt
 python -m streamlit run streamlit_app.py --server.address 127.0.0.1
 ```
 
+On the hosted site, **Connect my PC** provides a downloadable Windows PowerShell collector. Run it once on the Windows PC to create `cyberguard-real-logs.csv` on the Desktop, then upload that file in **Activity history**. Windows requires a person to approve the downloaded script before it can run.
+
 On Windows, open **Devices** and choose **Collect Windows logs on this PC**. The local app reads a selected recent window from Security sign-in / privilege / process / service events (IDs 4624, 4625, 4672, 4688, 4697) and System/Application warnings and errors. It analyzes the collected records in local session memory only. Security-log access may require starting the local app from an Administrator PowerShell.
 
 The **ML Lab** runs an Isolation Forest model with 200 trees over the currently stored telemetry. It uses event hour, severity, event type frequency, account frequency, source-address frequency, and one-hot encoded categories to rank anomalous records. **Investigations** stores case status, assignee, and notes in `cyberguard-local.db` on a local Windows run. On the hosted site, investigation notes are saved in the visitor's browser and can be exported as a CSV report.

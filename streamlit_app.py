@@ -176,6 +176,27 @@ def local_db() -> sqlite3.Connection:
     return conn
 
 
+def downloadable_collector_script() -> str:
+    return r'''# CyberGuard AI Windows Log Collector
+# Run in PowerShell as Administrator. Creates cyberguard-real-logs.csv on your Desktop.
+param([int]$Days = 7)
+$since = (Get-Date).AddDays(-$Days)
+$ids = 4624,4625,4672,4688,4697
+$rows = Get-WinEvent -FilterHashtable @{LogName='Security'; Id=$ids; StartTime=$since} -ErrorAction SilentlyContinue | ForEach-Object {
+  $eventType = switch ($_.Id) { 4624 {'Successful Login'} 4625 {'Failed Login'} 4672 {'Privilege Change'} 4688 {'Process Start'} 4697 {'Service Installation'} default {'Windows Security Event'} }
+  $severity = switch ($_.Id) { 4625 {'Medium'} 4672 {'High'} 4697 {'High'} default {'Low'} }
+  $status = if ($_.Id -eq 4625) {'Failed'} elseif ($_.Id -eq 4624) {'Success'} else {'Observed'}
+  try { $user = $_.UserId.Translate([System.Security.Principal.NTAccount]).Value } catch { $user = 'unknown' }
+  $message = ($_.Message -replace "[`r`n]+", ' ')
+  $ip = if ($message -match '(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)') { $Matches[0] } else { 'unknown' }
+  [PSCustomObject]@{ timestamp=$_.TimeCreated.ToUniversalTime().ToString('o'); eventId=$_.Id; eventType=$eventType; user=$user; sourceIp=$ip; destinationIp='unknown'; severity=$severity; status=$status; description=$message }
+}
+$path = Join-Path $env:USERPROFILE 'Desktop\cyberguard-real-logs.csv'
+$rows | Export-Csv $path -NoTypeInformation -Encoding UTF8
+Write-Host "Created: $path"
+'''
+
+
 def browser_case_workspace(findings: list[dict]) -> None:
     """Host a browser-local investigation workspace without transmitting case notes."""
     cases = [{"id": f"case-{finding['id']}", "title": finding["title"], "summary": finding.get("plain_summary", finding["evidence"])} for finding in findings]
@@ -683,9 +704,11 @@ ConvertTo-Json -InputObject @($output) -Depth 4 -Compress
         st.markdown("### Data handling")
         st.write("The collector uses Windows PowerShell's Get-WinEvent on this computer. It does not upload, persist, or transmit the records. Closing the local app session clears them.")
     else:
-        st.warning("This page is running on Streamlit Community Cloud, a remote Linux server. It cannot read your Windows Event Logs. For local-only collection, run a copy of this repository on your Windows PC.")
-        st.markdown("1. [Download the project ZIP](https://github.com/vaibhavrxj/Cyberguard-AI/archive/refs/heads/main.zip) and extract it.\n2. Install Python 3.10 or newer if needed.\n3. Open PowerShell in the extracted folder and run:\n   `py -m pip install -r requirements.txt`\n   `py -m streamlit run streamlit_app.py --server.address 127.0.0.1`\n4. Open `http://127.0.0.1:8501`, then choose **Devices** → **Collect Windows logs on this PC**. The local app does not send log data to the hosted site.")
-        st.caption("Selected records: Windows Security sign-in / privilege / process / service events (IDs 4624, 4625, 4672, 4688, 4697), plus System and Application warnings/errors. Maximum 500 records per channel.")
+        st.markdown("### Get real Windows logs")
+        st.write("Download the collector, run it once on your Windows PC, then upload the created CSV in **Activity history**.")
+        st.download_button("Download Windows Log Collector", downloadable_collector_script(), "cyberguard-log-collector.ps1", "text/plain", type="primary", use_container_width=True)
+        st.markdown("1. Open your Downloads folder and right-click `cyberguard-log-collector.ps1`.\n2. Choose **Run with PowerShell**. If Windows asks, run it as Administrator.\n3. The script creates `cyberguard-real-logs.csv` on your Desktop.\n4. Return here, open **Activity history**, and upload that CSV.")
+        st.caption("The collector reads recent Windows Security events: sign-ins, privilege changes, process starts, and service installations. A browser cannot start the downloaded file automatically; Windows requires you to approve the run.")
     st.markdown("### Live monitoring")
     st.write("This is a one-time collection. It does not run in the background, stream events continuously, or take response actions.")
 
