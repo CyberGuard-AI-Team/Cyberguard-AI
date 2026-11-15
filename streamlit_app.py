@@ -178,22 +178,49 @@ def local_db() -> sqlite3.Connection:
 
 def downloadable_collector_script() -> str:
     return r'''# CyberGuard AI Windows Log Collector
-# Run in PowerShell as Administrator. Creates cyberguard-real-logs.csv on your Desktop.
+# This script asks for Administrator permission and creates a CSV on your Desktop.
 param([int]$Days = 7)
-$since = (Get-Date).AddDays(-$Days)
-$ids = 4624,4625,4672,4688,4697
-$rows = Get-WinEvent -FilterHashtable @{LogName='Security'; Id=$ids; StartTime=$since} -ErrorAction SilentlyContinue | ForEach-Object {
-  $eventType = switch ($_.Id) { 4624 {'Successful Login'} 4625 {'Failed Login'} 4672 {'Privilege Change'} 4688 {'Process Start'} 4697 {'Service Installation'} default {'Windows Security Event'} }
-  $severity = switch ($_.Id) { 4625 {'Medium'} 4672 {'High'} 4697 {'High'} default {'Low'} }
-  $status = if ($_.Id -eq 4625) {'Failed'} elseif ($_.Id -eq 4624) {'Success'} else {'Observed'}
-  try { $user = $_.UserId.Translate([System.Security.Principal.NTAccount]).Value } catch { $user = 'unknown' }
-  $message = ($_.Message -replace "[`r`n]+", ' ')
-  $ip = if ($message -match '(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)') { $Matches[0] } else { 'unknown' }
-  [PSCustomObject]@{ timestamp=$_.TimeCreated.ToUniversalTime().ToString('o'); eventId=$_.Id; eventType=$eventType; user=$user; sourceIp=$ip; destinationIp='unknown'; severity=$severity; status=$status; description=$message }
+
+$principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+  $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+  Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList $arguments
+  exit
 }
-$path = Join-Path $env:USERPROFILE 'Desktop\cyberguard-real-logs.csv'
-$rows | Export-Csv $path -NoTypeInformation -Encoding UTF8
-Write-Host "Created: $path"
+
+$ErrorActionPreference = 'Stop'
+try {
+  $since = (Get-Date).AddDays(-$Days)
+  $labels = @{4624='Successful Login';4625='Failed Login';4672='Privilege Change';4688='Process Start';4697='Service Installation'}
+  $rows = [System.Collections.Generic.List[object]]::new()
+  foreach ($channel in @('Security','System','Application')) {
+    if ($channel -eq 'Security') {
+      $filter = @{LogName='Security'; Id=@(4624,4625,4672,4688,4697); StartTime=$since}
+    } else {
+      $filter = @{LogName=$channel; Level=@(1,2); StartTime=$since}
+    }
+    foreach ($event in @(Get-WinEvent -FilterHashtable $filter -MaxEvents 500 -ErrorAction SilentlyContinue)) {
+      $eventType = if ($labels.ContainsKey([int]$event.Id)) {$labels[[int]$event.Id]} elseif ($channel -eq 'System') {'System Event'} else {'Application Event'}
+      $severity = if ($event.Id -eq 4625 -or $event.Id -eq 4697) {'Medium'} elseif ($event.Id -eq 4672 -or $event.Level -eq 2) {'High'} elseif ($event.Level -eq 1) {'Critical'} else {'Low'}
+      $status = if ($event.Id -eq 4625) {'Failed'} elseif ($event.Id -eq 4624) {'Success'} else {'Observed'}
+      try {$user = $event.UserId.Translate([System.Security.Principal.NTAccount]).Value} catch {$user = 'unknown'}
+      $message = ([string]$event.Message -replace "[`r`n]+", ' ')
+      $ip = if ($message -match '(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)') {$Matches[0]} else {'unknown'}
+      $rows.Add([PSCustomObject]@{timestamp=$event.TimeCreated.ToUniversalTime().ToString('o');eventId=[string]$event.Id;eventType=$eventType;user=$user;sourceIp=$ip;destinationIp='unknown';severity=$severity;status=$status;description=$message})
+    }
+  }
+  if ($rows.Count -eq 0) { throw 'No matching Windows events were found in the selected time period.' }
+  $desktop = [Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop)
+  $path = Join-Path $desktop 'cyberguard-real-logs.csv'
+  $rows | Export-Csv $path -NoTypeInformation -Encoding UTF8
+  Write-Host "SUCCESS: $($rows.Count) logs saved to:" -ForegroundColor Green
+  Write-Host $path -ForegroundColor Cyan
+} catch {
+  Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
+  Write-Host 'Try again after accepting the Administrator permission prompt.' -ForegroundColor Yellow
+} finally {
+  Read-Host 'Press Enter to close this window'
+}
 '''
 
 
@@ -709,8 +736,8 @@ ConvertTo-Json -InputObject @($output) -Depth 4 -Compress
         st.download_button("Download Windows Log Collector", downloadable_collector_script(), "cyberguard-log-collector.ps1", "text/plain", type="primary", use_container_width=True)
         with st.container(border=True):
             st.markdown("### How to use this file")
-            st.markdown("1. Click **Download Windows Log Collector** above.\n2. Open your **Downloads** folder.\n3. Right-click `cyberguard-log-collector.ps1`.\n4. Select **Run with PowerShell**. If Windows asks for permission, allow it and use Administrator access if available.\n5. Wait until PowerShell says that the file was created.\n6. Open your Desktop and find `cyberguard-real-logs.csv`.\n7. Return to this website, open **Activity history**, upload the CSV, then open **Check my activity** to analyse it.")
-        st.caption("The collector reads recent Windows Security events: sign-ins, privilege changes, process starts, and service installations. A browser cannot start the downloaded file automatically; Windows requires you to approve the run.")
+            st.markdown("1. Download the current collector above.\n2. Open your **Downloads** folder and right-click `cyberguard-log-collector.ps1`.\n3. Select **Run with PowerShell**.\n4. When Windows shows an Administrator permission prompt, select **Yes**.\n5. Keep the PowerShell window open until it shows a green **SUCCESS** message and the CSV location.\n6. Press Enter to close PowerShell.\n7. Open the displayed location, usually your Desktop, and find `cyberguard-real-logs.csv`.\n8. Return here, open **Activity history**, upload the CSV, then use **Check my activity**.")
+        st.caption("The collector reads Security, System, and Application events. If it cannot create the CSV, it keeps the PowerShell window open and shows the reason in red.")
     st.markdown("### Live monitoring")
     st.write("This is a one-time collection. It does not run in the background, stream events continuously, or take response actions.")
 
