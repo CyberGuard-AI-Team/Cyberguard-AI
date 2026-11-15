@@ -468,14 +468,7 @@ def select_workspace_page() -> None:
     set_page(st.session_state.sidebar_page)
 
 with st.sidebar:
-    brand_col, account_menu_col = st.columns([5, 1])
-    with brand_col:
-        st.markdown('<div class="cg-brand">CYBERGUARD<span> AI</span></div><div class="cg-eyebrow">SOC workbench / M.Tech</div>', unsafe_allow_html=True)
-    with account_menu_col:
-        with st.popover("⋮", help="Open account menu", use_container_width=True):
-            st.markdown(f"<div class='cg-user-card'><div class='cg-eyebrow'>SIGNED IN AS</div><div class='cg-user-name'>{st.session_state.auth_display_name}</div><div style='font-size:11px;color:#96a6ac'>@{st.session_state.auth_username}</div></div>", unsafe_allow_html=True)
-            st.button("My profile", use_container_width=True, on_click=set_page, args=("Profile",))
-            st.button("Sign out", use_container_width=True, on_click=sign_out)
+    st.markdown('<div class="cg-brand">CYBERGUARD<span> AI</span></div><div class="cg-eyebrow">SOC workbench / M.Tech</div>', unsafe_allow_html=True)
     st.markdown("---")
     st.radio("MENU", NAV, format_func=lambda item: PAGE_LABELS[item], label_visibility="visible", key="sidebar_page", on_change=select_workspace_page)
     st.markdown("---")
@@ -488,7 +481,7 @@ with st.sidebar:
     st.markdown("<br><div class='cg-eyebrow'>CYBERGUARD / 0.1<br>LOCAL LAB</div>", unsafe_allow_html=True)
 
 page = st.session_state.workspace_page
-header_left, header_back, header_about = st.columns([5, 1, 1])
+header_left, header_back, header_about, header_account = st.columns([5, 1, 1, 0.55])
 with header_left:
     st.markdown(f"<div class='cg-eyebrow'>CYBERGUARD / YOUR SECURITY</div><h1 style='margin:.15rem 0 .2rem'>{PAGE_LABELS[page] if page != 'Overview' else 'Your security at a glance'}</h1><div style='color:#96a6ac;font-size:13px'>Simple explanations and clear next steps</div>", unsafe_allow_html=True)
 with header_back:
@@ -497,6 +490,11 @@ with header_back:
 with header_about:
     if page != "About CyberGuard":
         st.button("ⓘ About", use_container_width=True, on_click=set_page, args=("About CyberGuard",))
+with header_account:
+    with st.popover("⋮", help="Open account menu", use_container_width=True):
+        st.markdown(f"<div class='cg-user-card'><div class='cg-eyebrow'>SIGNED IN AS</div><div class='cg-user-name'>{st.session_state.auth_display_name}</div><div style='font-size:11px;color:#96a6ac'>@{st.session_state.auth_username}</div></div>", unsafe_allow_html=True)
+        st.button("My profile", use_container_width=True, on_click=set_page, args=("Profile",))
+        st.button("Sign out", use_container_width=True, on_click=sign_out)
 if page in FEATURE_GUIDES:
     show_feature_guide(page)
 
