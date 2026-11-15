@@ -51,8 +51,6 @@ h1,h2,h3 { letter-spacing:-.04em; }
 .cg-card { background:linear-gradient(145deg,#19232d,#151e27);border:1px solid var(--cg-border);border-radius:14px;padding:18px 20px;margin-bottom:12px; }
 .cg-auth-hero { max-width:560px;margin:8vh auto 0;text-align:center; }
 .cg-auth-badge { width:58px;height:58px;display:grid;place-items:center;margin:0 auto 16px;border-radius:18px;background:#56d7b71a;border:1px solid #56d7b755;color:#56d7b7;font-size:28px; }
-.cg-user-card { border:1px solid #56d7b733;background:#56d7b70c;border-radius:12px;padding:12px;margin:4px 0 12px; }
-.cg-user-name { color:#dce6e8;font-size:13px;font-weight:800;margin:3px 0;overflow:hidden;text-overflow:ellipsis; }
 .cg-metric { background:linear-gradient(145deg,#19232d,#151e27);border:1px solid var(--cg-border);border-radius:14px;padding:18px 20px;min-height:125px; }
 .cg-metric-label { color:var(--cg-muted);font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase; }
 .cg-metric-value { font-size:30px;font-weight:800;letter-spacing:-.05em;margin-top:12px; }
@@ -481,7 +479,7 @@ with st.sidebar:
     st.markdown("<br><div class='cg-eyebrow'>CYBERGUARD / 0.1<br>LOCAL LAB</div>", unsafe_allow_html=True)
 
 page = st.session_state.workspace_page
-header_left, header_back, header_about, header_account = st.columns([5, 1, 1, 0.55])
+header_left, header_back, header_about = st.columns([5, 1, 1])
 with header_left:
     st.markdown(f"<div class='cg-eyebrow'>CYBERGUARD / YOUR SECURITY</div><h1 style='margin:.15rem 0 .2rem'>{PAGE_LABELS[page] if page != 'Overview' else 'Your security at a glance'}</h1><div style='color:#96a6ac;font-size:13px'>Simple explanations and clear next steps</div>", unsafe_allow_html=True)
 with header_back:
@@ -490,11 +488,6 @@ with header_back:
 with header_about:
     if page != "About CyberGuard":
         st.button("ⓘ About", use_container_width=True, on_click=set_page, args=("About CyberGuard",))
-with header_account:
-    with st.popover("⋮", help="Open account menu", use_container_width=True):
-        st.markdown(f"<div class='cg-user-card'><div class='cg-eyebrow'>SIGNED IN AS</div><div class='cg-user-name'>{st.session_state.auth_display_name}</div><div style='font-size:11px;color:#96a6ac'>@{st.session_state.auth_username}</div></div>", unsafe_allow_html=True)
-        st.button("My profile", use_container_width=True, on_click=set_page, args=("Profile",))
-        st.button("Sign out", use_container_width=True, on_click=sign_out)
 if page in FEATURE_GUIDES:
     show_feature_guide(page)
 
