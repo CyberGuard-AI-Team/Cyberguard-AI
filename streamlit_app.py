@@ -425,28 +425,43 @@ elif page == "Scans":
         high_critical = 0
         failed_logins = 0
         evidence_links = 0
-        completed: list[str] = []
+        completed: list[tuple[str, bool]] = []
         with st.status(f"{scan_type.title()} scan running · stored records only", expanded=True) as status:
             st.markdown("<div class='cg-scan-visual'><div class='cg-radar'></div><div><div class='cg-eyebrow' style='color:#56d7b7'>ANALYZING STORED EVENTS</div><div style='font-size:12px;color:#dce6e8;margin-top:4px'>This animation represents staged checks over the app's event records, not a scan of your device.</div></div></div>", unsafe_allow_html=True)
             progress = st.progress(0, text="Preparing stored-event checks…")
             stage_log = st.empty()
             for index, stage in enumerate(stages):
                 progress.progress(int(index / len(stages) * 100), text=stage)
-                if index == 0:
+                if stage == "Loading stored security event records":
                     total = len(events)
-                elif index == 1:
+                    check_label, check_ok = f"Activity records loaded and ready to check", True
+                elif stage == "Reviewing authentication event sequences":
                     failed_logins = sum(e["eventType"] == "Failed Login" for e in events)
-                elif index == 2:
+                    check_label = "No failed sign-ins were found" if failed_logins == 0 else "Failed sign-ins were found and reviewed"
+                    check_ok = failed_logins == 0
+                elif stage == "Checking the 5-failures-in-15-minutes rule":
                     detected = findings_from_events(events)
                     high_critical = sum(e["severity"] in ("High", "Critical") for e in events)
                     evidence_links = sum(len(f.get("eventIds", [])) for f in detected)
-                elif index == 3:
-                    pass
-                elif index == 4:
+                    check_label = "No repeated sign-in pattern found" if not detected else "Repeated sign-in attempts need attention"
+                    check_ok = not detected
+                elif stage == "Correlating any successful sign-in or privilege change":
+                    risky_followup = any("then one succeeded" in item["title"].lower() for item in detected)
+                    check_label = "No risky follow-up sign-in found" if not risky_followup else "A successful sign-in followed repeated failed attempts"
+                    check_ok = not risky_followup
+                elif stage == "Summarizing severity and building evidence links":
                     evidence_links = sum(len(f.get("eventIds", [])) for f in detected)
+                    check_label = "No high-priority activity found" if high_critical == 0 else "High-priority activity needs review"
+                    check_ok = high_critical == 0
+                else:
+                    check_label, check_ok = "Your activity check report is ready", True
                 time.sleep(1.0 if deep else 0.9)
-                completed.append(stage)
-                stage_log.markdown("\n".join(f"✓ &nbsp; {line}" for line in completed[-4:]), unsafe_allow_html=True)
+                completed.append((check_label, check_ok))
+                lines = "".join(
+                    f"<div style='display:flex;align-items:center;gap:10px;padding:8px 10px;margin:6px 0;border-radius:8px;background:{'#12362d' if passed else '#3a1b22'};color:#dce6e8'><span style='font-size:18px;font-weight:800;color:{'#56d7b7' if passed else '#fb7185'}'>{'✓' if passed else '✕'}</span><span>{label}</span></div>"
+                    for label, passed in completed
+                )
+                stage_log.markdown(lines, unsafe_allow_html=True)
             progress.progress(100, text="Scan complete · rule-based checks only")
             status.update(label=f"{scan_type.title()} scan complete · {total} stored records reviewed", state="complete", expanded=True)
 
