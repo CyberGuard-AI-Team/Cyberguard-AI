@@ -87,6 +87,13 @@ section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
 [data-testid="stMarkdownContainer"] p,
 [data-testid="stMarkdownContainer"] li,
 label { color:#17212b !important; }
+[data-testid="stWidgetLabel"] p,
+[data-testid="stRadio"] label p,
+[data-testid="stCheckbox"] label span,
+[data-testid="stExpander"] summary,
+[data-testid="stFileUploader"] label,
+[data-testid="stCaptionContainer"] { color:#334450 !important; }
+[data-baseweb="select"] *, [data-baseweb="popover"] * { color:#17212b !important; }
 .cg-card,.cg-metric,div[data-testid="stMetric"] { background:linear-gradient(145deg,#ffffff,#f7fafc) !important; border-color:var(--cg-border) !important; color:#17212b !important; }
 .cg-scan-visual { border-color:#087d6844 !important; background:linear-gradient(120deg,#087d6810,#ffffff) !important; }
 .cg-scan-complete { border-color:#087d6866 !important; background:linear-gradient(120deg,#087d6816,#ffffff) !important; }
@@ -101,6 +108,8 @@ label { color:#17212b !important; }
 [data-testid="stTextInput"] input, [data-testid="stTextArea"] textarea, [data-baseweb="select"] > div { background:#ffffff !important; color:#17212b !important; border-color:#b9c8d2 !important; }
 .stApp [style*="color:#dce6e8"] { color:#17212b !important; }
 .stApp [style*="color:#96a6ac"] { color:#52616d !important; }
+.stApp [style*="color:#aebdc2"] { color:#41515e !important; }
+.stApp [style*="color:#56d7b7"] { color:#087d68 !important; }
 """
 
 
