@@ -56,4 +56,5 @@ Thumbs.db
 
 # Local-only CyberGuard case records and Python cache
 cyberguard-local.db
+cyberguard-users.db
 __pycache__/

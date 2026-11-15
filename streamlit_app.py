@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import csv
 import base64
+import hashlib
+import hmac
 import io
 import json
 import os
@@ -21,8 +23,8 @@ from sklearn.ensemble import IsolationForest
 
 st.set_page_config(page_title="CyberGuard AI | SOC Workbench", page_icon="🛡️", layout="wide")
 
-NAV = ["Overview", "Scans", "Event review", "Findings", "Investigations", "Analytics", "ML Lab", "Assistant", "Devices"]
-PAGE_LABELS = {"Overview": "Home", "About CyberGuard": "About CyberGuard", "Scans": "Check my activity", "Event review": "Activity history", "Findings": "What needs attention", "Investigations": "My follow-ups", "Analytics": "Activity summary", "ML Lab": "Smart analysis", "Assistant": "Ask CyberGuard", "Devices": "Connect my PC"}
+NAV = ["Overview", "Profile", "Scans", "Event review", "Findings", "Investigations", "Analytics", "ML Lab", "Assistant", "Devices"]
+PAGE_LABELS = {"Overview": "Home", "Profile": "My profile", "About CyberGuard": "About CyberGuard", "Scans": "Check my activity", "Event review": "Activity history", "Findings": "What needs attention", "Investigations": "My follow-ups", "Analytics": "Activity summary", "ML Lab": "Smart analysis", "Assistant": "Ask CyberGuard", "Devices": "Connect my PC"}
 SEVERITIES = ["Critical", "High", "Medium", "Low", "Informational"]
 COLORS = {"Critical": "#fb7185", "High": "#fb923c", "Medium": "#fbbf24", "Low": "#56d7b7", "Informational": "#94a3b8"}
 INDIA_TZ = ZoneInfo("Asia/Kolkata")
@@ -47,6 +49,10 @@ h1,h2,h3 { letter-spacing:-.04em; }
 .cg-eyebrow { color:var(--cg-muted);font-size:10px;font-weight:800;letter-spacing:.13em;text-transform:uppercase; }
 .cg-notice { border:1px solid #fbbf2430;background:#fbbf240b;color:#f5d98e;border-radius:10px;padding:12px 15px;font-size:12px;margin:4px 0 22px; }
 .cg-card { background:linear-gradient(145deg,#19232d,#151e27);border:1px solid var(--cg-border);border-radius:14px;padding:18px 20px;margin-bottom:12px; }
+.cg-auth-hero { max-width:560px;margin:8vh auto 0;text-align:center; }
+.cg-auth-badge { width:58px;height:58px;display:grid;place-items:center;margin:0 auto 16px;border-radius:18px;background:#56d7b71a;border:1px solid #56d7b755;color:#56d7b7;font-size:28px; }
+.cg-user-card { border:1px solid #56d7b733;background:#56d7b70c;border-radius:12px;padding:12px;margin:4px 0 12px; }
+.cg-user-name { color:#dce6e8;font-size:13px;font-weight:800;margin:3px 0;overflow:hidden;text-overflow:ellipsis; }
 .cg-metric { background:linear-gradient(145deg,#19232d,#151e27);border:1px solid var(--cg-border);border-radius:14px;padding:18px 20px;min-height:125px; }
 .cg-metric-label { color:var(--cg-muted);font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase; }
 .cg-metric-value { font-size:30px;font-weight:800;letter-spacing:-.05em;margin-top:12px; }
@@ -76,6 +82,152 @@ div[data-testid="stMetricValue"] { font-weight:800; }
 footer { visibility:hidden; }
 </style>
 """, unsafe_allow_html=True)
+
+
+def auth_db() -> sqlite3.Connection:
+    """Open the small local account store used by this Streamlit application."""
+    conn = sqlite3.connect("cyberguard-users.db")
+    conn.execute("""CREATE TABLE IF NOT EXISTS users (
+        username TEXT PRIMARY KEY,
+        display_name TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        about TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL
+    )""")
+    conn.commit()
+    return conn
+
+
+def password_hash(password: str, salt: bytes | None = None) -> str:
+    salt = salt or os.urandom(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 310_000)
+    return f"{salt.hex()}${digest.hex()}"
+
+
+def password_matches(password: str, stored: str) -> bool:
+    try:
+        salt_hex, stored_digest = stored.split("$", 1)
+        candidate = password_hash(password, bytes.fromhex(salt_hex)).split("$", 1)[1]
+        return hmac.compare_digest(candidate, stored_digest)
+    except (TypeError, ValueError):
+        return False
+
+
+def create_account(display_name: str, username: str, password: str) -> tuple[bool, str]:
+    display_name, username = display_name.strip(), username.strip().lower()
+    if len(display_name) < 2:
+        return False, "Enter the name you want to show on your profile."
+    if not re.fullmatch(r"[a-z0-9._-]{3,32}", username):
+        return False, "Username must be 3–32 characters: letters, numbers, dot, underscore, or hyphen."
+    if len(password) < 8:
+        return False, "Choose a password with at least 8 characters."
+    conn = auth_db()
+    try:
+        conn.execute(
+            "INSERT INTO users (username, display_name, password_hash, created_at) VALUES (?, ?, ?, ?)",
+            (username, display_name, password_hash(password), local_time(datetime.now(timezone.utc))),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        return False, "That username is already in use. Try signing in instead."
+    finally:
+        conn.close()
+    return True, username
+
+
+def authenticate(username: str, password: str) -> tuple[bool, str, str]:
+    conn = auth_db()
+    row = conn.execute("SELECT username, display_name, password_hash FROM users WHERE username=?", (username.strip().lower(),)).fetchone()
+    conn.close()
+    if row and password_matches(password, row[2]):
+        return True, row[0], row[1]
+    return False, "", ""
+
+
+def current_user() -> tuple[str, str, str] | None:
+    username = st.session_state.get("auth_username")
+    if not username:
+        return None
+    conn = auth_db()
+    row = conn.execute("SELECT username, display_name, about FROM users WHERE username=?", (username,)).fetchone()
+    conn.close()
+    return row
+
+
+def update_profile(username: str, display_name: str, about: str) -> tuple[bool, str]:
+    display_name = display_name.strip()
+    if len(display_name) < 2:
+        return False, "Enter a name with at least 2 characters."
+    conn = auth_db()
+    conn.execute("UPDATE users SET display_name=?, about=? WHERE username=?", (display_name, about.strip()[:300], username))
+    conn.commit()
+    conn.close()
+    st.session_state.auth_display_name = display_name
+    return True, "Profile saved."
+
+
+def change_password(username: str, current_password: str, new_password: str) -> tuple[bool, str]:
+    if len(new_password) < 8:
+        return False, "Your new password needs at least 8 characters."
+    conn = auth_db()
+    row = conn.execute("SELECT password_hash FROM users WHERE username=?", (username,)).fetchone()
+    if not row or not password_matches(current_password, row[0]):
+        conn.close()
+        return False, "Your current password is incorrect."
+    conn.execute("UPDATE users SET password_hash=? WHERE username=?", (password_hash(new_password), username))
+    conn.commit()
+    conn.close()
+    return True, "Password updated."
+
+
+def sign_out() -> None:
+    st.session_state.authenticated = False
+    st.session_state.auth_username = ""
+    st.session_state.auth_display_name = ""
+    st.session_state.workspace_page = "Overview"
+    st.session_state.sidebar_page = "Overview"
+    st.session_state.page_history = []
+
+
+def show_auth_page() -> None:
+    _, panel, _ = st.columns([1, 1.2, 1])
+    with panel:
+        st.markdown("<div class='cg-auth-hero'><div class='cg-auth-badge'>🛡</div><div class='cg-eyebrow'>CYBERGUARD AI / SECURE WORKSPACE</div><h1>Welcome</h1><p style='color:#aebdc2'>Sign in to your workspace, or create a new profile to get started.</p></div>", unsafe_allow_html=True)
+        mode = st.radio("Account option", ["Sign in", "Create account"], horizontal=True, label_visibility="collapsed", key="auth_mode")
+        if mode == "Sign in":
+            with st.form("sign-in-form"):
+                username = st.text_input("Username", placeholder="Your username")
+                password = st.text_input("Password", type="password", placeholder="Your password")
+                submitted = st.form_submit_button("Sign in", type="primary", use_container_width=True)
+            if submitted:
+                valid, verified_username, display_name = authenticate(username, password)
+                if valid:
+                    st.session_state.authenticated = True
+                    st.session_state.auth_username = verified_username
+                    st.session_state.auth_display_name = display_name
+                    st.rerun()
+                st.error("Username or password is incorrect.")
+            st.caption("New here? Select **Create account** above.")
+        else:
+            with st.form("create-account-form"):
+                display_name = st.text_input("Your name", placeholder="How should CyberGuard address you?")
+                username = st.text_input("Choose a username", placeholder="e.g. rahul.sharma")
+                password = st.text_input("Create password", type="password", placeholder="At least 8 characters")
+                confirm_password = st.text_input("Confirm password", type="password")
+                submitted = st.form_submit_button("Create account", type="primary", use_container_width=True)
+            if submitted:
+                if password != confirm_password:
+                    st.error("The passwords do not match.")
+                else:
+                    created, result = create_account(display_name, username, password)
+                    if created:
+                        st.session_state.authenticated = True
+                        st.session_state.auth_username = result
+                        st.session_state.auth_display_name = display_name.strip()
+                        st.rerun()
+                    st.error(result)
+            st.caption("Already have an account? Select **Sign in** above.")
+        st.caption("Use a unique practice password for this project; do not reuse a work or banking password.")
 
 
 def findings_from_events(events: list[dict]) -> list[dict]:
@@ -119,6 +271,7 @@ def go_back() -> None:
 
 FEATURE_GUIDES = {
     "Overview": ("Your starting point", "See the most important thing to do next, recent activity, and quick links to the right page."),
+    "Profile": ("My profile", "View and update the name and short description used in your CyberGuard workspace."),
     "Scans": ("Check my activity", "Runs a guided review of the activity already in this workspace and turns it into easy-to-read results."),
     "Event review": ("Activity history", "Search or upload activity records, then open an item to understand what happened."),
     "Findings": ("What needs attention", "Shows possible security concerns in plain language, along with the safest next action."),
@@ -276,6 +429,18 @@ def browser_case_workspace(findings: list[dict]) -> None:
     components.html(markup, height=max(280, 235 * len(cases) + 110), scrolling=True)
 
 
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+if "auth_username" not in st.session_state:
+    st.session_state.auth_username = ""
+if "auth_display_name" not in st.session_state:
+    st.session_state.auth_display_name = ""
+
+if not st.session_state.authenticated:
+    show_auth_page()
+    st.stop()
+
+
 if "events" not in st.session_state:
     st.session_state.events = []
 if "findings" not in st.session_state:
@@ -305,6 +470,11 @@ def select_workspace_page() -> None:
 with st.sidebar:
     st.markdown('<div class="cg-brand">CYBERGUARD<span> AI</span></div><div class="cg-eyebrow">SOC workbench / M.Tech</div>', unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown(f"<div class='cg-user-card'><div class='cg-eyebrow'>SIGNED IN AS</div><div class='cg-user-name'>{st.session_state.auth_display_name}</div><div style='font-size:11px;color:#96a6ac'>@{st.session_state.auth_username}</div></div>", unsafe_allow_html=True)
+    account_col, logout_col = st.columns(2)
+    account_col.button("My profile", use_container_width=True, on_click=set_page, args=("Profile",))
+    logout_col.button("Sign out", use_container_width=True, on_click=sign_out)
+    st.markdown("---")
     st.radio("MENU", NAV, format_func=lambda item: PAGE_LABELS[item], label_visibility="visible", key="sidebar_page", on_change=select_workspace_page)
     st.markdown("---")
     st.markdown("<div class='cg-eyebrow'>MODEL / ANALYTICS</div><p style='font-size:12px;color:#56d7b7'>● Telemetry workspace ready</p><p style='font-size:11px;color:#96a6ac'>Isolation Forest · unsupervised anomaly scoring</p>", unsafe_allow_html=True)
@@ -339,7 +509,41 @@ def event_table(rows: list[dict], key: str) -> None:
     st.dataframe(frame[["When", "What happened", "Account", "How important", "Plain explanation"]], use_container_width=True, hide_index=True, key=key)
 
 
-if page == "About CyberGuard":
+if page == "Profile":
+    profile = current_user()
+    if profile is None:
+        sign_out()
+        st.rerun()
+    username, display_name, about = profile
+    st.markdown(f"<div class='cg-card'><div class='cg-eyebrow'>YOUR CYBERGUARD ACCOUNT</div><h2 style='margin:.35rem 0'>{display_name}</h2><div style='color:#96a6ac;font-size:13px'>@{username}</div></div>", unsafe_allow_html=True)
+    left, right = st.columns([1.35, 1])
+    with left:
+        st.subheader("Profile details")
+        with st.form("profile-form"):
+            new_name = st.text_input("Name", value=display_name)
+            new_about = st.text_area("About you", value=about, max_chars=300, placeholder="For example: M.Tech student interested in cybersecurity.")
+            save_profile = st.form_submit_button("Save profile", type="primary")
+        if save_profile:
+            saved, message = update_profile(username, new_name, new_about)
+            (st.success if saved else st.error)(message)
+            if saved:
+                st.rerun()
+    with right:
+        st.subheader("Account security")
+        with st.form("password-form"):
+            current_password = st.text_input("Current password", type="password")
+            new_password = st.text_input("New password", type="password")
+            confirm_password = st.text_input("Confirm new password", type="password")
+            save_password = st.form_submit_button("Update password")
+        if save_password:
+            if new_password != confirm_password:
+                st.error("The new passwords do not match.")
+            else:
+                changed, message = change_password(username, current_password, new_password)
+                (st.success if changed else st.error)(message)
+        st.caption("Your password is stored as a salted cryptographic hash, not as plain text.")
+
+elif page == "About CyberGuard":
     st.markdown("<div class='cg-card'><h2 style='margin-top:0'>CyberGuard AI</h2><p style='color:#aebdc2;font-size:15px'>A simple cybersecurity workspace that turns activity records into understandable advice. It is designed for people who want to know what happened, whether it matters, and what to do next.</p></div>", unsafe_allow_html=True)
     journey, features, data = st.tabs(["How it works", "What each feature does", "Your data and results"])
     with journey:
