@@ -52,6 +52,9 @@ h1,h2,h3 { letter-spacing:-.04em; }
 .cg-card { background:linear-gradient(145deg,#19232d,#151e27);border:1px solid var(--cg-border);border-radius:14px;padding:18px 20px;margin-bottom:12px; }
 .cg-auth-hero { max-width:560px;margin:8vh auto 0;text-align:center; }
 .cg-auth-badge { width:58px;height:58px;display:grid;place-items:center;margin:0 auto 16px;border-radius:18px;background:#56d7b71a;border:1px solid #56d7b755;color:#56d7b7;font-size:28px; }
+.cg-team-card { background:linear-gradient(145deg,#19232d,#151e27);border:1px solid var(--cg-border);border-radius:14px;padding:16px 18px;min-height:112px; }
+.cg-team-card a { color:#56d7b7;text-decoration:none;font-size:12px;font-weight:700; }
+.cg-team-card a:hover { text-decoration:underline; }
 .cg-metric { background:linear-gradient(145deg,#19232d,#151e27);border:1px solid var(--cg-border);border-radius:14px;padding:18px 20px;min-height:125px; }
 .cg-metric-label { color:var(--cg-muted);font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase; }
 .cg-metric-value { font-size:30px;font-weight:800;letter-spacing:-.05em;margin-top:12px; }
@@ -486,7 +489,7 @@ with st.sidebar:
     st.markdown("<br><div class='cg-eyebrow'>CYBERGUARD / 0.1<br>LOCAL LAB</div>", unsafe_allow_html=True)
 
 page = st.session_state.workspace_page
-header_left, header_back, header_about = st.columns([5, 1, 1])
+header_left, header_back, header_about, header_github = st.columns([5, 1, 1, 1])
 with header_left:
     st.markdown(f"<div class='cg-eyebrow'>CYBERGUARD / YOUR SECURITY</div><h1 style='margin:.15rem 0 .2rem'>{PAGE_LABELS[page] if page != 'Overview' else 'Your security at a glance'}</h1><div style='color:#96a6ac;font-size:13px'>Simple explanations and clear next steps</div>", unsafe_allow_html=True)
 with header_back:
@@ -495,6 +498,8 @@ with header_back:
 with header_about:
     if page != "About CyberGuard":
         st.button("ⓘ About", use_container_width=True, on_click=set_page, args=("About CyberGuard",))
+with header_github:
+    st.link_button("GitHub ↗", "https://github.com/CyberGuard-AI-Team/Cyberguard-AI", use_container_width=True)
 if page in FEATURE_GUIDES:
     show_feature_guide(page)
 
@@ -564,6 +569,16 @@ if page == "Profile":
 
 elif page == "About CyberGuard":
     st.markdown("<div class='cg-card'><h2 style='margin-top:0'>CyberGuard AI</h2><p style='color:#aebdc2;font-size:15px'>A simple cybersecurity workspace that turns activity records into understandable advice. It is designed for people who want to know what happened, whether it matters, and what to do next.</p></div>", unsafe_allow_html=True)
+    st.markdown("### Project team")
+    team_columns = st.columns(3)
+    team_members = [
+        ("Vaibhav", "vaibhavrxj", "https://github.com/vaibhavrxj"),
+        ("AnieeD", "AnieeD", "https://github.com/AnieeD"),
+        ("Akhil Panwar", "akhilpanwar873", "https://github.com/akhilpanwar873"),
+    ]
+    for column, (name, handle, profile_url) in zip(team_columns, team_members):
+        column.markdown(f"<div class='cg-team-card'><div class='cg-eyebrow'>PROJECT CONTRIBUTOR</div><div style='font-size:17px;font-weight:800;margin:8px 0 5px'>{name}</div><a href='{profile_url}' target='_blank'>GitHub · @{handle} ↗</a></div>", unsafe_allow_html=True)
+    st.caption("Repository owned by the CyberGuard-AI-Team GitHub organization and maintained by the three project contributors.")
     journey, features, data = st.tabs(["How it works", "What each feature does", "Your data and results"])
     with journey:
         st.markdown("### A simple four-step journey")
