@@ -470,6 +470,12 @@ with st.sidebar:
     st.markdown("---")
     st.radio("MENU", NAV, format_func=lambda item: PAGE_LABELS[item], label_visibility="visible", key="sidebar_page", on_change=select_workspace_page)
     st.markdown("---")
+    with st.expander(f"👤  {st.session_state.auth_display_name}", expanded=False):
+        st.markdown("<div class='cg-eyebrow'>SIGNED IN ACCOUNT</div>", unsafe_allow_html=True)
+        st.caption(f"@{st.session_state.auth_username}")
+        st.button("Open my profile", use_container_width=True, on_click=set_page, args=("Profile",))
+        st.button("Sign out", use_container_width=True, on_click=sign_out)
+    st.markdown("---")
     st.markdown("<div class='cg-eyebrow'>MODEL / ANALYTICS</div><p style='font-size:12px;color:#56d7b7'>● Telemetry workspace ready</p><p style='font-size:11px;color:#96a6ac'>Isolation Forest · unsupervised anomaly scoring</p>", unsafe_allow_html=True)
     if st.button("↻  Clear loaded logs", use_container_width=True):
         st.session_state.events = []
