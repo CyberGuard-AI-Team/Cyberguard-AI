@@ -21,6 +21,7 @@ import streamlit.components.v1 as components
 from sklearn.ensemble import IsolationForest
 
 
+
 st.set_page_config(page_title="CyberGuard AI | SOC Workbench", page_icon="🛡️", layout="wide")
 
 NAV = ["Overview", "Profile", "Scans", "Event review", "Findings", "Investigations", "Analytics", "ML Lab", "Assistant", "Devices"]
