@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import base64
 import io
 import json
 import os
@@ -181,13 +182,6 @@ def downloadable_collector_script() -> str:
 # This script asks for Administrator permission and creates a CSV on your Desktop.
 param([int]$Days = 7)
 
-$principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
-if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-  $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
-  Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList $arguments
-  exit
-}
-
 $ErrorActionPreference = 'Stop'
 try {
   $since = (Get-Date).AddDays(-$Days)
@@ -221,6 +215,22 @@ try {
 } finally {
   Read-Host 'Press Enter to close this window'
 }
+'''
+
+
+def downloadable_collector_launcher() -> str:
+    encoded = base64.b64encode(downloadable_collector_script().encode("utf-8")).decode("ascii")
+    return f'''@echo off
+title CyberGuard AI Windows Log Collector
+powershell.exe -NoProfile -Command "if (([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {{ exit 0 }} else {{ exit 1 }}"
+if errorlevel 1 (
+  powershell.exe -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+  exit /b
+)
+set "collector=%TEMP%\\cyberguard-log-collector.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$bytes=[System.Convert]::FromBase64String('{encoded}');[System.IO.File]::WriteAllBytes($env:TEMP + '\\cyberguard-log-collector.ps1',$bytes)"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%collector%"
+pause
 '''
 
 
@@ -732,12 +742,12 @@ ConvertTo-Json -InputObject @($output) -Depth 4 -Compress
         st.write("The collector uses Windows PowerShell's Get-WinEvent on this computer. It does not upload, persist, or transmit the records. Closing the local app session clears them.")
     else:
         st.markdown("### Get real Windows logs")
-        st.write("Download the collector, run it once on your Windows PC, then upload the created CSV in **Activity history**.")
-        st.download_button("Download Windows Log Collector", downloadable_collector_script(), "cyberguard-log-collector.ps1", "text/plain", type="primary", use_container_width=True)
+        st.write("Download the launcher, double-click it once on your Windows PC, then upload the created CSV in **Activity history**.")
+        st.download_button("Download & Run Windows Log Collector", downloadable_collector_launcher(), "cyberguard-log-collector.cmd", "text/plain", type="primary", use_container_width=True)
         with st.container(border=True):
             st.markdown("### How to use this file")
-            st.markdown("1. Download the current collector above.\n2. Open your **Downloads** folder and right-click `cyberguard-log-collector.ps1`.\n3. Select **Run with PowerShell**.\n4. When Windows shows an Administrator permission prompt, select **Yes**.\n5. Keep the PowerShell window open until it shows a green **SUCCESS** message and the CSV location.\n6. Press Enter to close PowerShell.\n7. Open the displayed location, usually your Desktop, and find `cyberguard-real-logs.csv`.\n8. Return here, open **Activity history**, upload the CSV, then use **Check my activity**.")
-        st.caption("The collector reads Security, System, and Application events. If it cannot create the CSV, it keeps the PowerShell window open and shows the reason in red.")
+            st.markdown("1. Download the new `cyberguard-log-collector.cmd` file above.\n2. Open your **Downloads** folder.\n3. Double-click `cyberguard-log-collector.cmd`. Do not use the old `.ps1` file.\n4. When Windows asks for Administrator permission, select **Yes**.\n5. Wait for the green **SUCCESS** message and the CSV location. The window stays open.\n6. Press Enter to close it.\n7. Open the displayed location, usually your Desktop, and find `cyberguard-real-logs.csv`.\n8. Return here, open **Activity history**, upload the CSV, then use **Check my activity**.")
+        st.caption("The launcher requests Administrator permission automatically and keeps the result window open. If it cannot create the CSV, it shows the reason in red.")
     st.markdown("### Live monitoring")
     st.write("This is a one-time collection. It does not run in the background, stream events continuously, or take response actions.")
 
