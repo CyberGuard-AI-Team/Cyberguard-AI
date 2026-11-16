@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import base64
 import hashlib
+import html
 import hmac
 import io
 import json
@@ -26,6 +27,7 @@ st.set_page_config(page_title="CyberGuard AI | SOC Workbench", page_icon="🛡�
 
 NAV = ["Overview", "Profile", "Scans", "Event review", "Findings", "Investigations", "Analytics", "ML Lab", "Assistant", "Devices"]
 PAGE_LABELS = {"Overview": "Home", "Profile": "My profile", "About CyberGuard": "About CyberGuard", "Scans": "Check my activity", "Event review": "Activity history", "Findings": "What needs attention", "Investigations": "My follow-ups", "Analytics": "Activity summary", "ML Lab": "Smart analysis", "Assistant": "Ask CyberGuard", "Devices": "Connect my PC"}
+NAV_ICONS = {"Overview": "⌂", "Profile": "◉", "Scans": "⌁", "Event review": "▤", "Findings": "◇", "Investigations": "☷", "Analytics": "⌗", "ML Lab": "✦", "Assistant": "◎", "Devices": "▣"}
 SEVERITIES = ["Critical", "High", "Medium", "Low", "Informational"]
 COLORS = {"Critical": "#fb7185", "High": "#fb923c", "Medium": "#fbbf24", "Low": "#56d7b7", "Informational": "#94a3b8"}
 INDIA_TZ = ZoneInfo("Asia/Kolkata")
@@ -83,6 +85,119 @@ div[data-testid="stMetricValue"] { font-weight:800; }
 [data-testid="stTabs"] button[aria-selected="true"] { color:var(--cg-teal); }
 [data-testid="stDataFrame"] { border:1px solid var(--cg-border);border-radius:10px;overflow:hidden; }
 footer { visibility:hidden; }
+</style>
+""", unsafe_allow_html=True)
+
+# CyberGuard's visual system. This second layer intentionally overrides the
+# legacy styles above while keeping older page components compatible.
+st.markdown("""
+<style>
+:root {
+  --cg-bg:#060b16; --cg-bg-2:#091223; --cg-panel:#0e1729; --cg-panel-2:#121e33;
+  --cg-border:#233452; --cg-border-soft:#1a2942; --cg-cyan:#35d8ff;
+  --cg-blue:#4d7cff; --cg-violet:#8b5cf6; --cg-green:#48e39b; --cg-red:#ff667a;
+  --cg-amber:#ffbe55; --cg-text:#f3f7ff; --cg-muted:#91a0ba;
+  --cg-shadow:0 22px 60px rgba(0,0,0,.28);
+}
+html, body, [class*="css"] { font-family:Manrope, sans-serif; }
+.stApp {
+  color:var(--cg-text);
+  background:
+    radial-gradient(circle at 78% 2%,rgba(41,112,164,.17),transparent 31%),
+    radial-gradient(circle at 23% 72%,rgba(75,70,190,.1),transparent 32%),
+    linear-gradient(145deg,var(--cg-bg),var(--cg-bg-2) 58%,#07101e);
+}
+.stApp:before {
+  content:"";position:fixed;inset:0;pointer-events:none;opacity:.16;z-index:0;
+  background-image:linear-gradient(rgba(80,131,193,.1) 1px,transparent 1px),linear-gradient(90deg,rgba(80,131,193,.1) 1px,transparent 1px);
+  background-size:42px 42px;mask-image:linear-gradient(to bottom,black,transparent 72%);
+}
+.block-container { max-width:1580px;padding-top:1.45rem;padding-bottom:4rem; }
+header[data-testid="stHeader"] { background:rgba(6,11,22,.72);backdrop-filter:blur(18px);border-bottom:1px solid rgba(60,85,124,.28); }
+section[data-testid="stSidebar"] { width:304px!important;background:linear-gradient(180deg,rgba(10,18,33,.98),rgba(7,13,24,.99));border-right:1px solid var(--cg-border-soft); }
+section[data-testid="stSidebar"] > div { width:304px!important; }
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { color:#d8e3f6; }
+section[data-testid="stSidebar"] hr { border-color:var(--cg-border-soft);margin:1.2rem 0; }
+.cg-brand { font-size:22px;font-weight:800;letter-spacing:-.045em;display:flex;align-items:center;gap:10px;margin-top:.35rem; }
+.cg-brand:before { content:"◆";display:grid;place-items:center;width:34px;height:34px;border-radius:11px;color:#07101e;background:linear-gradient(135deg,var(--cg-cyan),var(--cg-violet));box-shadow:0 0 25px rgba(53,216,255,.22);font-size:15px; }
+.cg-brand span { color:var(--cg-cyan); }
+.cg-eyebrow { color:#8495b2;font-size:10px;font-weight:800;letter-spacing:.17em;text-transform:uppercase; }
+section[data-testid="stSidebar"] div[role="radiogroup"] { gap:5px; }
+section[data-testid="stSidebar"] div[role="radiogroup"] > label { padding:10px 12px;border:1px solid transparent;border-radius:11px;transition:.18s ease;background:transparent; }
+section[data-testid="stSidebar"] div[role="radiogroup"] > label:hover { background:#15233a;border-color:#263a5d;transform:translateX(2px); }
+section[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) { background:linear-gradient(100deg,rgba(50,101,194,.28),rgba(31,185,220,.12));border-color:#2e80b5;box-shadow:inset 3px 0 0 var(--cg-cyan),0 9px 30px rgba(0,0,0,.16); }
+section[data-testid="stSidebar"] div[role="radiogroup"] label p { font-size:13px;font-weight:650;color:#aebbd0; }
+section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p { color:#f5f9ff; }
+section[data-testid="stSidebar"] div[role="radiogroup"] [data-testid="stRadio"] { display:none; }
+h1,h2,h3 { color:var(--cg-text);letter-spacing:-.045em; }
+h1 { font-size:clamp(2.2rem,4vw,4.3rem)!important;line-height:1.02!important; }
+p,li,label { color:#b3c0d4; }
+a { color:var(--cg-cyan); }
+.cg-page-head { display:flex;align-items:center;gap:12px;min-height:32px;margin:2px 0 8px; }
+.cg-page-kicker { color:#8fa0ba;font-size:10px;font-weight:800;letter-spacing:.18em;text-transform:uppercase; }
+.cg-live-dot { display:inline-block;width:7px;height:7px;border-radius:99px;background:var(--cg-green);box-shadow:0 0 12px var(--cg-green);margin-right:7px; }
+.cg-head-chip { display:inline-flex;align-items:center;padding:6px 10px;border:1px solid #28415c;border-radius:999px;background:#0e1b2c;color:#a9bad1;font-size:10px;font-weight:750; }
+.cg-hero { position:relative;overflow:hidden;border:1px solid #233b60;border-radius:24px;padding:clamp(24px,4vw,48px);margin:10px 0 20px;background:linear-gradient(125deg,rgba(17,31,54,.97),rgba(8,18,34,.95));box-shadow:var(--cg-shadow); }
+.cg-hero:before { content:"";position:absolute;width:520px;height:520px;border-radius:50%;right:-160px;top:-280px;background:radial-gradient(circle,rgba(53,216,255,.21),rgba(79,86,245,.08) 45%,transparent 70%); }
+.cg-hero-grid { position:relative;z-index:1;display:grid;grid-template-columns:minmax(0,1.45fr) minmax(240px,.55fr);gap:36px;align-items:center; }
+.cg-hero h1 { max-width:760px;margin:.5rem 0 1rem;font-size:clamp(2.25rem,4.4vw,4.8rem)!important; }
+.cg-hero-copy { max-width:740px;color:#aebdd2;font-size:15px;line-height:1.75; }
+.cg-status-badge { display:inline-flex;align-items:center;gap:8px;padding:7px 11px;border:1px solid #2c4664;border-radius:999px;background:#0c192b;color:#b9c8dc;font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase; }
+.cg-status-badge.safe { border-color:rgba(72,227,155,.35);color:#70efae;background:rgba(23,91,66,.18); }
+.cg-status-badge.warning { border-color:rgba(255,190,85,.38);color:#ffd17c;background:rgba(111,69,10,.2); }
+.cg-status-badge.urgent { border-color:rgba(255,102,122,.4);color:#ff8f9e;background:rgba(113,27,42,.2); }
+.cg-orb-wrap { min-height:238px;display:grid;place-items:center;position:relative; }
+.cg-orb { width:188px;height:188px;border-radius:50%;position:relative;background:radial-gradient(circle at 34% 30%,#4ce7ff 0 2%,#1b7ed1 10%,#172e75 33%,#0a1534 62%,#050a15 73%);box-shadow:0 0 55px rgba(53,216,255,.26),inset -20px -24px 50px rgba(0,0,0,.5);animation:cg-float 5s ease-in-out infinite; }
+.cg-orb:before,.cg-orb:after { content:"";position:absolute;border-radius:50%;inset:-17px;border:1px solid rgba(53,216,255,.45);transform:rotate(-18deg) scaleY(.48);box-shadow:0 0 18px rgba(53,216,255,.12); }
+.cg-orb:after { inset:-38px;border-color:rgba(139,92,246,.4);transform:rotate(24deg) scaleY(.55); }
+.cg-orb-grid { position:absolute;inset:17%;border-radius:50%;opacity:.65;background-image:linear-gradient(rgba(115,230,255,.22) 1px,transparent 1px),linear-gradient(90deg,rgba(115,230,255,.22) 1px,transparent 1px);background-size:14px 14px;mask-image:radial-gradient(circle,black,transparent 72%); }
+.cg-orb-node { position:absolute;width:9px;height:9px;border-radius:50%;background:var(--cg-red);box-shadow:0 0 0 6px rgba(255,102,122,.12),0 0 17px var(--cg-red); }
+.cg-orb-node.one { left:20%;top:35%; }.cg-orb-node.two { right:15%;top:48%;background:var(--cg-amber);box-shadow:0 0 0 6px rgba(255,190,85,.12),0 0 17px var(--cg-amber); }.cg-orb-node.three { left:48%;bottom:12%;background:var(--cg-green);box-shadow:0 0 0 6px rgba(72,227,155,.12),0 0 17px var(--cg-green); }
+@keyframes cg-float { 50% { transform:translateY(-8px) rotate(2deg); } }
+.cg-kpis { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 22px; }
+.cg-kpi { position:relative;overflow:hidden;background:linear-gradient(145deg,rgba(18,31,53,.96),rgba(10,19,34,.96));border:1px solid var(--cg-border);border-radius:17px;padding:18px 19px;min-height:126px;box-shadow:0 13px 35px rgba(0,0,0,.16);transition:.2s ease; }
+.cg-kpi:hover,.cg-step:hover { transform:translateY(-3px);border-color:#32659a;box-shadow:0 18px 42px rgba(0,0,0,.25); }
+.cg-kpi:after { content:"";position:absolute;width:85px;height:85px;border-radius:50%;right:-35px;top:-35px;background:radial-gradient(circle,rgba(53,216,255,.22),transparent 70%); }
+.cg-kpi-label { color:#8293ae;font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase; }
+.cg-kpi-value { color:#f5f8ff;font-size:29px;font-weight:800;letter-spacing:-.055em;margin:11px 0 4px; }
+.cg-kpi-detail { color:#8697b1;font-size:10px;line-height:1.5; }
+.cg-section-title { display:flex;align-items:end;justify-content:space-between;gap:12px;margin:30px 0 12px; }
+.cg-section-title h2 { margin:0;font-size:1.45rem; }.cg-section-title p { margin:0;color:#8293ae;font-size:11px; }
+.cg-step-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px;margin-bottom:14px; }
+.cg-step { min-height:188px;padding:20px;border:1px solid var(--cg-border);border-radius:18px;background:linear-gradient(145deg,rgba(17,29,50,.96),rgba(9,18,32,.96));transition:.2s ease; }
+.cg-step-num { display:grid;place-items:center;width:34px;height:34px;border-radius:11px;background:linear-gradient(135deg,var(--cg-cyan),var(--cg-violet));color:#06101d;font-size:11px;font-weight:900;box-shadow:0 8px 22px rgba(65,146,238,.2); }
+.cg-step h3 { margin:18px 0 8px;font-size:1rem;letter-spacing:-.02em; }.cg-step p { color:#91a0b7;font-size:11px;line-height:1.65;margin:0; }
+.cg-card,.cg-metric,div[data-testid="stMetric"],div[data-testid="stVerticalBlockBorderWrapper"] { background:linear-gradient(145deg,rgba(17,29,49,.97),rgba(9,18,31,.97));border-color:var(--cg-border);box-shadow:0 13px 38px rgba(0,0,0,.14); }
+.cg-card,.cg-metric { border-radius:17px; }.cg-metric { min-height:125px; }
+.cg-metric-label,div[data-testid="stMetricLabel"] p { color:#8293ae; }.cg-metric-detail { color:#8697b1; }
+.cg-notice { border-color:rgba(255,190,85,.28);background:rgba(255,190,85,.07);color:#e8c985; }
+.cg-team-link { background:#0c1728;border-color:#21334f; }.cg-team-link:hover { border-color:#35d8ff88; }
+.cg-auth-hero { max-width:650px;margin:6vh auto 0;text-align:center; }
+.cg-auth-hero h1 { margin:.7rem 0!important;background:linear-gradient(100deg,#f5f8ff 25%,#80e8ff 63%,#a48aff);-webkit-background-clip:text;background-clip:text;color:transparent; }
+.cg-auth-badge { width:68px;height:68px;border-radius:21px;border:1px solid rgba(79,176,255,.45);background:linear-gradient(145deg,rgba(53,216,255,.2),rgba(139,92,246,.18));color:#8eeaff;box-shadow:0 18px 55px rgba(43,130,219,.18),inset 0 0 24px rgba(53,216,255,.08); }
+.cg-auth-features { display:flex;justify-content:center;flex-wrap:wrap;gap:8px;margin:18px 0 22px; }
+.cg-auth-features span { padding:7px 10px;border:1px solid #243a59;border-radius:999px;background:rgba(12,25,43,.72);color:#93a7c4;font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase; }
+.stButton button { min-height:42px;border-radius:11px;border-color:#2b3e5d;background:#111d31;color:#dce7f8;font-weight:750; }
+.stButton button[kind="primary"] { background:linear-gradient(110deg,var(--cg-cyan),#5887ff 55%,var(--cg-violet));color:#06101c;border:0;box-shadow:0 9px 28px rgba(53,216,255,.18); }
+.stButton button:hover { border-color:#3f8ac2;color:#fff;box-shadow:0 12px 32px rgba(0,0,0,.28); }
+[data-testid="stForm"],div[data-testid="stExpander"],div[data-testid="stFileUploader"] { border-color:var(--cg-border)!important;border-radius:15px!important;background:rgba(10,19,34,.58); }
+div[data-baseweb="input"] > div,div[data-baseweb="select"] > div,textarea { background:#0b1526!important;border-color:#283b59!important;color:#e8f0ff!important;border-radius:10px!important; }
+input,textarea { color:#e9f1ff!important;caret-color:var(--cg-cyan); }
+input:focus,textarea:focus { outline:2px solid rgba(53,216,255,.35)!important;outline-offset:1px; }
+[data-testid="stTabs"] [role="tablist"] { gap:7px;border-bottom-color:#20304b; }
+[data-testid="stTabs"] button { border-radius:10px 10px 0 0;padding-left:18px;padding-right:18px;color:#8fa0ba; }
+[data-testid="stTabs"] button[aria-selected="true"] { color:var(--cg-cyan);background:rgba(53,216,255,.06); }
+[data-testid="stDataFrame"] { border-color:var(--cg-border);border-radius:13px;box-shadow:0 12px 34px rgba(0,0,0,.14); }
+[data-testid="stAlert"] { border-radius:13px;border-color:#2a415f;background:#0d192b; }
+.cg-queue { border:1px solid var(--cg-border);border-radius:18px;overflow:hidden;background:#0a1424;box-shadow:var(--cg-shadow); }
+.cg-queue-head,.cg-queue-row { display:grid;grid-template-columns:110px minmax(220px,1.6fr) minmax(170px,.9fr) 120px;gap:14px;align-items:center;padding:14px 18px; }
+.cg-queue-head { background:#13213a;color:#8293ae;font-size:9px;font-weight:850;text-transform:uppercase;letter-spacing:.13em; }.cg-queue-row { border-top:1px solid #1d2c46;color:#dce6f6;font-size:11px; }.cg-queue-row:hover { background:#101d31; }
+.cg-severity { display:inline-flex;width:max-content;padding:5px 9px;border-radius:999px;font-weight:800;font-size:9px; }.cg-severity.high,.cg-severity.critical { color:#ff9baa;background:rgba(182,35,62,.28); }.cg-severity.medium { color:#ffd77e;background:rgba(154,103,15,.24); }.cg-severity.low,.cg-severity.informational { color:#70efae;background:rgba(20,121,81,.22); }
+.cg-queue-main { font-weight:700; }.cg-queue-sub { color:#7f90ab;font-size:9px;margin-top:3px; }.cg-state { color:#8ae7bc;font-size:9px;font-weight:800; }
+footer { visibility:hidden; }
+@media (max-width:1000px) { .cg-hero-grid{grid-template-columns:1fr}.cg-orb-wrap{display:none}.cg-kpis{grid-template-columns:repeat(2,1fr)}.cg-step-grid{grid-template-columns:1fr}.cg-queue-head,.cg-queue-row{grid-template-columns:90px 1fr 100px}.cg-queue-head>*:nth-child(3),.cg-queue-row>*:nth-child(3){display:none} }
+@media (max-width:640px) { .block-container{padding-left:1rem;padding-right:1rem}.cg-kpis{grid-template-columns:1fr}.cg-hero{padding:24px 20px;border-radius:18px}.cg-queue-head,.cg-queue-row{grid-template-columns:78px 1fr}.cg-queue-head>*:last-child,.cg-queue-row>*:last-child{display:none} }
+@media (prefers-reduced-motion:reduce) { *,*:before,*:after { animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important; } }
 </style>
 """, unsafe_allow_html=True)
 
@@ -195,7 +310,7 @@ def sign_out() -> None:
 def show_auth_page() -> None:
     _, panel, _ = st.columns([1, 1.2, 1])
     with panel:
-        st.markdown("<div class='cg-auth-hero'><div class='cg-auth-badge'>🛡</div><div class='cg-eyebrow'>CYBERGUARD AI / SECURE WORKSPACE</div><h1>Welcome</h1><p style='color:#aebdc2'>Sign in to your workspace, or create a new profile to get started.</p></div>", unsafe_allow_html=True)
+        st.markdown("<div class='cg-auth-hero'><div class='cg-auth-badge'>⬡</div><div class='cg-eyebrow'>CYBERGUARD AI / SECURE WORKSPACE</div><h1>Welcome</h1><p style='color:#aebdd2'>Sign in to turn real Windows activity into clear, understandable security findings.</p><div class='cg-auth-features'><span>Real log analysis</span><span>Explainable findings</span><span>Indian Standard Time</span></div></div>", unsafe_allow_html=True)
         mode = st.radio("Account option", ["Sign in", "Create account"], horizontal=True, label_visibility="collapsed", key="auth_mode")
         if mode == "Sign in":
             with st.form("sign-in-form"):
@@ -432,6 +547,83 @@ def browser_case_workspace(findings: list[dict]) -> None:
     components.html(markup, height=max(280, 235 * len(cases) + 110), scrolling=True)
 
 
+def security_posture(events: list[dict], findings: list[dict]) -> tuple[str, str, str]:
+    """Describe the current workspace without inventing a security score."""
+    if not events:
+        return "Ready for real logs", "safe", "No activity file is loaded yet"
+    open_findings = [item for item in findings if item.get("status") in ("New", "Investigating")]
+    urgent_events = [item for item in events if item.get("severity") in ("Critical", "High")]
+    if any(item.get("severity") in ("Critical", "High") for item in open_findings):
+        return "Review recommended", "urgent", "A high-priority pattern needs your attention"
+    if open_findings or urgent_events:
+        return "Check these records", "warning", "CyberGuard found activity worth reviewing"
+    return "No urgent pattern found", "safe", "The loaded records have no active rule-based finding"
+
+
+def overview_hero(events: list[dict], findings: list[dict], scans: list[dict], display_name: str) -> None:
+    title, tone, detail = security_posture(events, findings)
+    open_findings = sum(item.get("status") in ("New", "Investigating") for item in findings)
+    urgent_events = sum(item.get("severity") in ("Critical", "High") for item in events)
+    latest_check = scans[0].get("started", "Available") if scans else "Not run"
+    latest_check = html.escape(str(latest_check))
+    safe_name = html.escape(display_name or "there")
+    st.markdown(f"""
+    <section class="cg-hero">
+      <div class="cg-hero-grid">
+        <div>
+          <span class="cg-status-badge {tone}"><span class="cg-live-dot"></span>{html.escape(title)}</span>
+          <h1>Clear security answers,<br>from your real activity.</h1>
+          <p class="cg-hero-copy">Welcome back, {safe_name}. CyberGuard reads the Windows activity you choose to add, highlights unusual patterns, and explains what they mean in everyday language—without pretending to scan your device from the cloud.</p>
+          <p class="cg-hero-copy" style="font-size:11px;margin-top:12px;color:#7f91ac">{html.escape(detail)}</p>
+        </div>
+        <div class="cg-orb-wrap" aria-label="Decorative security analysis visual">
+          <div class="cg-orb"><div class="cg-orb-grid"></div><i class="cg-orb-node one"></i><i class="cg-orb-node two"></i><i class="cg-orb-node three"></i></div>
+        </div>
+      </div>
+    </section>
+    <section class="cg-kpis">
+      <article class="cg-kpi"><div class="cg-kpi-label">Activity records</div><div class="cg-kpi-value">{len(events):,}</div><div class="cg-kpi-detail">Real rows currently loaded</div></article>
+      <article class="cg-kpi"><div class="cg-kpi-label">Needs review</div><div class="cg-kpi-value">{open_findings:,}</div><div class="cg-kpi-detail">Open rule-based findings</div></article>
+      <article class="cg-kpi"><div class="cg-kpi-label">High priority</div><div class="cg-kpi-value">{urgent_events:,}</div><div class="cg-kpi-detail">High or critical event labels</div></article>
+      <article class="cg-kpi"><div class="cg-kpi-label">Latest activity check</div><div class="cg-kpi-value" style="font-size:18px;margin-top:17px">{latest_check}</div><div class="cg-kpi-detail">Displayed in Indian Standard Time</div></article>
+    </section>
+    """, unsafe_allow_html=True)
+
+
+def incident_queue(findings: list[dict], events: list[dict]) -> None:
+    """Render a compact, readable queue using only real workspace records."""
+    rows: list[dict] = []
+    for finding in findings[:6]:
+        rows.append({
+            "severity": finding.get("severity", "Medium"),
+            "title": finding.get("title", "Activity needs review"),
+            "detail": finding.get("category", "Rule-based finding"),
+            "source": finding.get("source", "Loaded logs"),
+            "state": finding.get("status", "New"),
+        })
+    if not rows:
+        for event in sorted(events, key=lambda item: item.get("timestamp", datetime.min.replace(tzinfo=timezone.utc)), reverse=True)[:6]:
+            rows.append({
+                "severity": event.get("severity", "Informational"),
+                "title": event.get("eventType", "Windows activity"),
+                "detail": event.get("description", "Recorded Windows activity"),
+                "source": event.get("sourceIp") or event.get("user") or "Local record",
+                "state": "Reviewed" if event.get("severity") not in ("Critical", "High") else "Check",
+            })
+    if not rows:
+        return
+    body = []
+    for row in rows:
+        severity = str(row["severity"])
+        tone = severity.lower() if severity.lower() in {"critical", "high", "medium", "low", "informational"} else "informational"
+        body.append(
+            f'<div class="cg-queue-row"><div><span class="cg-severity {tone}">{html.escape(severity)}</span></div>'
+            f'<div><div class="cg-queue-main">{html.escape(str(row["title"]))}</div><div class="cg-queue-sub">{html.escape(str(row["detail"]))}</div></div>'
+            f'<div>{html.escape(str(row["source"]))}</div><div class="cg-state">{html.escape(str(row["state"]))}</div></div>'
+        )
+    st.markdown('<div class="cg-queue"><div class="cg-queue-head"><div>Priority</div><div>Activity</div><div>Source</div><div>Status</div></div>' + "".join(body) + "</div>", unsafe_allow_html=True)
+
+
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "auth_username" not in st.session_state:
@@ -473,7 +665,7 @@ def select_workspace_page() -> None:
 with st.sidebar:
     st.markdown('<div class="cg-brand">CYBERGUARD<span> AI</span></div><div class="cg-eyebrow">SOC workbench / M.Tech</div>', unsafe_allow_html=True)
     st.markdown("---")
-    st.radio("MENU", NAV, format_func=lambda item: PAGE_LABELS[item], label_visibility="visible", key="sidebar_page", on_change=select_workspace_page)
+    st.radio("WORKSPACE", NAV, format_func=lambda item: f"{NAV_ICONS[item]}   {PAGE_LABELS[item]}", label_visibility="visible", key="sidebar_page", on_change=select_workspace_page)
     st.markdown("---")
     with st.expander(f"👤  {st.session_state.auth_display_name}", expanded=False):
         st.markdown("<div class='cg-eyebrow'>SIGNED IN ACCOUNT</div>", unsafe_allow_html=True)
@@ -490,7 +682,8 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
     st.markdown("---")
-    st.markdown("<div class='cg-eyebrow'>MODEL / ANALYTICS</div><p style='font-size:12px;color:#56d7b7'>● Telemetry workspace ready</p><p style='font-size:11px;color:#96a6ac'>Isolation Forest · unsupervised anomaly scoring</p>", unsafe_allow_html=True)
+    model_copy = "Ready for uploaded activity" if not events else f"{len(events):,} records available"
+    st.markdown(f"<div class='cg-eyebrow'>MODEL / ANALYTICS</div><p style='font-size:12px;color:#48e39b'><span class='cg-live-dot'></span>{model_copy}</p><p style='font-size:11px;color:#8293ae'>Isolation Forest · unsupervised anomaly scoring</p>", unsafe_allow_html=True)
     if st.button("↻  Clear loaded logs", use_container_width=True):
         st.session_state.events = []
         st.session_state.findings = []
@@ -501,7 +694,8 @@ with st.sidebar:
 page = st.session_state.workspace_page
 header_left, header_back, header_about = st.columns([5, 1, 1])
 with header_left:
-    st.markdown(f"<div class='cg-eyebrow'>CYBERGUARD / YOUR SECURITY</div><h1 style='margin:.15rem 0 .2rem'>{PAGE_LABELS[page] if page != 'Overview' else 'Your security at a glance'}</h1><div style='color:#96a6ac;font-size:13px'>Simple explanations and clear next steps</div>", unsafe_allow_html=True)
+    page_title = PAGE_LABELS[page] if page != "Overview" else "Security workspace"
+    st.markdown(f"<div class='cg-page-head'><span class='cg-page-kicker'>CYBERGUARD / YOUR SECURITY</span><span class='cg-head-chip'><span class='cg-live-dot'></span>Workspace ready</span></div><h1 style='margin:.15rem 0 .35rem'>{html.escape(page_title)}</h1><div style='color:#91a0ba;font-size:13px'>Real activity, clear explanations, safer next steps</div>", unsafe_allow_html=True)
 with header_back:
     if page != "Overview":
         st.button("← Back", use_container_width=True, on_click=go_back, disabled=not st.session_state.page_history)
@@ -598,42 +792,45 @@ elif page == "About CyberGuard":
         st.info("CyberGuard helps you decide what to review first. For an unfamiliar sign-in or a possible account issue, change the password and contact your IT support team.")
 
 elif page == "Overview":
-    st.markdown("<div class='cg-card'><h2 style='margin:0 0 8px'>Welcome to CyberGuard AI</h2><div style='color:#aebdc2;font-size:15px'>Start with your real Windows logs. CyberGuard will help you check them, understand anything unusual, and decide what to do next.</div></div>", unsafe_allow_html=True)
+    overview_hero(events, findings, st.session_state.scans, st.session_state.auth_display_name)
     if not events:
-        st.markdown("### Get started in three simple steps")
-        step_one, step_two, step_three = st.columns(3)
-        step_one.markdown("<div class='cg-card'><b>1 · Get your logs</b><div style='color:#aebdc2;font-size:13px;margin-top:8px'>Download the Windows collector or use a log file you already have.</div></div>", unsafe_allow_html=True)
-        step_two.markdown("<div class='cg-card'><b>2 · Add the file</b><div style='color:#aebdc2;font-size:13px;margin-top:8px'>Upload your CSV or JSON file into Activity history.</div></div>", unsafe_allow_html=True)
-        step_three.markdown("<div class='cg-card'><b>3 · Check it</b><div style='color:#aebdc2;font-size:13px;margin-top:8px'>Run a check and read the results in plain language.</div></div>", unsafe_allow_html=True)
+        st.markdown("<div class='cg-section-title'><div><div class='cg-eyebrow'>START HERE</div><h2>From Windows logs to a clear answer</h2></div><p>Three guided steps · no cybersecurity background needed</p></div>", unsafe_allow_html=True)
+        st.markdown("""
+        <section class="cg-step-grid">
+          <article class="cg-step"><div class="cg-step-num">01</div><h3>Collect real activity</h3><p>Download the Windows collector, run it on the computer you want to check, and let it create a CSV file on that computer.</p></article>
+          <article class="cg-step"><div class="cg-step-num">02</div><h3>Add the CSV securely</h3><p>Open Activity history and upload the file. CyberGuard reads only the activity included in that file.</p></article>
+          <article class="cg-step"><div class="cg-step-num">03</div><h3>Understand the result</h3><p>Run an activity check, then open What needs attention for a plain-language explanation and next step.</p></article>
+        </section>
+        """, unsafe_allow_html=True)
         b1, b2, b3 = st.columns(3)
-        b1.button("Get Windows logs", use_container_width=True, on_click=set_page, args=("Devices",))
-        b2.button("Upload a log file", use_container_width=True, on_click=set_page, args=("Event review",))
-        b3.button("How CyberGuard works", type="primary", use_container_width=True, on_click=set_page, args=("About CyberGuard",))
-        st.info("No logs have been added yet. Start with “Get Windows logs” if this is your first time using CyberGuard.")
+        b1.button("01  Get Windows logs", type="primary", use_container_width=True, on_click=set_page, args=("Devices",))
+        b2.button("02  Upload a log file", use_container_width=True, on_click=set_page, args=("Event review",))
+        b3.button("Learn how it works", use_container_width=True, on_click=set_page, args=("About CyberGuard",))
+        st.info("Your dashboard is intentionally empty until you add real activity. CyberGuard does not fill it with demo incidents.")
     else:
-        filter_col, _ = st.columns([1, 3])
+        filter_col, action_col = st.columns([1.2, 2.8])
         with filter_col:
             window = st.radio("Show activity from", ["Past 24 hours", "Past 7 days", "All records"], horizontal=True, label_visibility="collapsed", key="overview_window")
+        with action_col:
+            quick_one, quick_two = st.columns(2)
+            quick_one.button("Run another activity check", type="primary", use_container_width=True, on_click=set_page, args=("Scans",))
+            quick_two.button("Open smart analysis", use_container_width=True, on_click=set_page, args=("ML Lab",))
         visible_events = [e for e in events if in_window(e, window)]
-        if active_findings:
-            st.markdown("<div class='cg-card'><b>There is activity worth checking.</b><div style='color:#96a6ac;font-size:13px;margin-top:8px'>Open “What needs attention” for a simple explanation and the safest next step.</div></div>", unsafe_allow_html=True)
+        st.markdown("<div class='cg-section-title'><div><div class='cg-eyebrow'>PRIORITY QUEUE</div><h2>Activity to understand first</h2></div><p>Built only from the records currently loaded</p></div>", unsafe_allow_html=True)
+        incident_queue(findings, visible_events)
+        actions = st.columns([1, 1, 1])
+        actions[0].button("Review all activity", use_container_width=True, on_click=set_page, args=("Event review",))
+        actions[1].button("Explain the findings", use_container_width=True, on_click=set_page, args=("Findings",))
+        actions[2].button("Ask CyberGuard", use_container_width=True, on_click=set_page, args=("Assistant",))
+        st.markdown("<div class='cg-section-title'><div><div class='cg-eyebrow'>NEXT ACTIONS</div><h2>What CyberGuard recommends</h2></div><p>Suggestions—not automatic changes to your PC</p></div>", unsafe_allow_html=True)
+        if findings:
+            recommendation_columns = st.columns(min(3, len(findings)))
+            for index, finding in enumerate(findings[:3]):
+                safe_title = html.escape(str(finding.get("title", "Review this activity")))
+                safe_step = html.escape(str(finding.get("next_steps", "Open the finding to see the recommended next step.")))
+                recommendation_columns[index].markdown(f"<div class='cg-card' style='min-height:160px'><span class='cg-severity {str(finding.get('severity', 'Medium')).lower()}'>{html.escape(str(finding.get('severity', 'Medium')))}</span><h3 style='font-size:15px;margin:15px 0 8px'>{safe_title}</h3><div style='color:#91a0ba;font-size:11px;line-height:1.6'>{safe_step}</div></div>", unsafe_allow_html=True)
         else:
-            st.markdown("<div class='cg-card'><b>Your latest check found nothing urgent.</b><div style='color:#96a6ac;font-size:13px;margin-top:8px'>You can review activity or run another check whenever you want.</div></div>", unsafe_allow_html=True)
-        actions = st.columns(3)
-        actions[0].button("Review my logs", use_container_width=True, on_click=set_page, args=("Event review",))
-        actions[1].button("Run a security check", type="primary", use_container_width=True, on_click=set_page, args=("Scans",))
-        actions[2].button("See what needs attention", use_container_width=True, on_click=set_page, args=("Findings",))
-        a, b = st.columns([1.45, 1])
-        with a:
-            st.subheader("Recent activity")
-            event_table(visible_events[:5], "overview-events")
-        with b:
-            st.subheader("Your next steps")
-            if findings:
-                for f in findings[:5]:
-                    st.markdown(f"<div class='cg-card'><b>{f['title']}</b><div style='color:#96a6ac;font-size:12px;margin-top:8px'>{f.get('next_steps', 'Open this item to see what to do next.')}</div></div>", unsafe_allow_html=True)
-            else:
-                st.info("Nothing needs action right now.")
+            st.success("No active rule-based finding needs action right now. You can still review the records or run Smart analysis.")
         st.caption("Last check: " + (st.session_state.scans[0]["started"] if st.session_state.scans else "Not run yet") + " · Time zone: IST (UTC+05:30).")
 
 elif page == "Event review":
