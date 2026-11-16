@@ -13,7 +13,6 @@ import subprocess
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -53,9 +52,6 @@ h1,h2,h3 { letter-spacing:-.04em; }
 .cg-card { background:linear-gradient(145deg,#19232d,#151e27);border:1px solid var(--cg-border);border-radius:14px;padding:18px 20px;margin-bottom:12px; }
 .cg-auth-hero { max-width:560px;margin:8vh auto 0;text-align:center; }
 .cg-auth-badge { width:58px;height:58px;display:grid;place-items:center;margin:0 auto 16px;border-radius:18px;background:#56d7b71a;border:1px solid #56d7b755;color:#56d7b7;font-size:28px; }
-.cg-team-card { background:linear-gradient(145deg,#19232d,#151e27);border:1px solid var(--cg-border);border-radius:14px;padding:16px 18px;min-height:112px; }
-.cg-team-card a { color:#56d7b7;text-decoration:none;font-size:12px;font-weight:700; }
-.cg-team-card a:hover { text-decoration:underline; }
 .cg-metric { background:linear-gradient(145deg,#19232d,#151e27);border:1px solid var(--cg-border);border-radius:14px;padding:18px 20px;min-height:125px; }
 .cg-metric-label { color:var(--cg-muted);font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase; }
 .cg-metric-value { font-size:30px;font-weight:800;letter-spacing:-.05em;margin-top:12px; }
@@ -89,8 +85,7 @@ footer { visibility:hidden; }
 
 def auth_db() -> sqlite3.Connection:
     """Open the small local account store used by this Streamlit application."""
-    database_path = Path(__file__).resolve().parent / "cyberguard-users.db"
-    conn = sqlite3.connect(database_path)
+    conn = sqlite3.connect("cyberguard-users.db")
     conn.execute("""CREATE TABLE IF NOT EXISTS users (
         username TEXT PRIMARY KEY,
         display_name TEXT NOT NULL,
@@ -117,24 +112,14 @@ def password_matches(password: str, stored: str) -> bool:
         return False
 
 
-def password_validation_error(password: str) -> str | None:
-    if len(password) < 8:
-        return "Password must contain at least 8 characters."
-    if "@" not in password:
-        return "Password must include the @ symbol."
-    if not any(character.isdigit() for character in password):
-        return "Password must include at least one number."
-    return None
-
-
 def create_account(display_name: str, username: str, password: str) -> tuple[bool, str]:
     display_name, username = display_name.strip(), username.strip().lower()
     if len(display_name) < 2:
         return False, "Enter the name you want to show on your profile."
     if not re.fullmatch(r"[a-z0-9._-]{3,32}", username):
         return False, "Username must be 3–32 characters: letters, numbers, dot, underscore, or hyphen."
-    if password_error := password_validation_error(password):
-        return False, password_error
+    if len(password) < 8:
+        return False, "Choose a password with at least 8 characters."
     conn = auth_db()
     try:
         conn.execute(
@@ -181,8 +166,8 @@ def update_profile(username: str, display_name: str, about: str) -> tuple[bool, 
 
 
 def change_password(username: str, current_password: str, new_password: str) -> tuple[bool, str]:
-    if password_error := password_validation_error(new_password):
-        return False, password_error
+    if len(new_password) < 8:
+        return False, "Your new password needs at least 8 characters."
     conn = auth_db()
     row = conn.execute("SELECT password_hash FROM users WHERE username=?", (username,)).fetchone()
     if not row or not password_matches(current_password, row[0]):
@@ -208,8 +193,6 @@ def show_auth_page() -> None:
     with panel:
         st.markdown("<div class='cg-auth-hero'><div class='cg-auth-badge'>🛡</div><div class='cg-eyebrow'>CYBERGUARD AI / SECURE WORKSPACE</div><h1>Welcome</h1><p style='color:#aebdc2'>Sign in to your workspace, or create a new profile to get started.</p></div>", unsafe_allow_html=True)
         mode = st.radio("Account option", ["Sign in", "Create account"], horizontal=True, label_visibility="collapsed", key="auth_mode")
-        if auth_notice := st.session_state.pop("auth_notice", None):
-            st.success(auth_notice)
         if mode == "Sign in":
             with st.form("sign-in-form"):
                 username = st.text_input("Username", placeholder="Your username")
@@ -228,9 +211,8 @@ def show_auth_page() -> None:
             with st.form("create-account-form"):
                 display_name = st.text_input("Your name", placeholder="How should CyberGuard address you?")
                 username = st.text_input("Choose a username", placeholder="e.g. rahul.sharma")
-                password = st.text_input("Create password", type="password", placeholder="8+ characters with @ and a number")
+                password = st.text_input("Create password", type="password", placeholder="At least 8 characters")
                 confirm_password = st.text_input("Confirm password", type="password")
-                st.caption("Password must have at least 8 characters, the @ symbol, and one number.")
                 submitted = st.form_submit_button("Create account", type="primary", use_container_width=True)
             if submitted:
                 if password != confirm_password:
@@ -238,8 +220,9 @@ def show_auth_page() -> None:
                 else:
                     created, result = create_account(display_name, username, password)
                     if created:
-                        st.session_state.auth_mode = "Sign in"
-                        st.session_state.auth_notice = "Account created. Your password was saved securely as a salted hash. Sign in to continue."
+                        st.session_state.authenticated = True
+                        st.session_state.auth_username = result
+                        st.session_state.auth_display_name = display_name.strip()
                         st.rerun()
                     st.error(result)
             st.caption("Already have an account? Select **Sign in** above.")
@@ -503,7 +486,7 @@ with st.sidebar:
     st.markdown("<br><div class='cg-eyebrow'>CYBERGUARD / 0.1<br>LOCAL LAB</div>", unsafe_allow_html=True)
 
 page = st.session_state.workspace_page
-header_left, header_back, header_about, header_github = st.columns([5, 1, 1, 1])
+header_left, header_back, header_about = st.columns([5, 1, 1])
 with header_left:
     st.markdown(f"<div class='cg-eyebrow'>CYBERGUARD / YOUR SECURITY</div><h1 style='margin:.15rem 0 .2rem'>{PAGE_LABELS[page] if page != 'Overview' else 'Your security at a glance'}</h1><div style='color:#96a6ac;font-size:13px'>Simple explanations and clear next steps</div>", unsafe_allow_html=True)
 with header_back:
@@ -512,8 +495,6 @@ with header_back:
 with header_about:
     if page != "About CyberGuard":
         st.button("ⓘ About", use_container_width=True, on_click=set_page, args=("About CyberGuard",))
-with header_github:
-    st.link_button("GitHub ↗", "https://github.com/CyberGuard-AI-Team/Cyberguard-AI", use_container_width=True)
 if page in FEATURE_GUIDES:
     show_feature_guide(page)
 
@@ -583,16 +564,6 @@ if page == "Profile":
 
 elif page == "About CyberGuard":
     st.markdown("<div class='cg-card'><h2 style='margin-top:0'>CyberGuard AI</h2><p style='color:#aebdc2;font-size:15px'>A simple cybersecurity workspace that turns activity records into understandable advice. It is designed for people who want to know what happened, whether it matters, and what to do next.</p></div>", unsafe_allow_html=True)
-    st.markdown("### Project team")
-    team_columns = st.columns(3)
-    team_members = [
-        ("Vaibhav", "vaibhavrxj", "https://github.com/vaibhavrxj"),
-        ("AnieeD", "AnieeD", "https://github.com/AnieeD"),
-        ("Akhil Panwar", "akhilpanwar873", "https://github.com/akhilpanwar873"),
-    ]
-    for column, (name, handle, profile_url) in zip(team_columns, team_members):
-        column.markdown(f"<div class='cg-team-card'><div class='cg-eyebrow'>PROJECT CONTRIBUTOR</div><div style='font-size:17px;font-weight:800;margin:8px 0 5px'>{name}</div><a href='{profile_url}' target='_blank'>GitHub · @{handle} ↗</a></div>", unsafe_allow_html=True)
-    st.caption("Repository owned by the CyberGuard-AI-Team GitHub organization and maintained by the three project contributors.")
     journey, features, data = st.tabs(["How it works", "What each feature does", "Your data and results"])
     with journey:
         st.markdown("### A simple four-step journey")
