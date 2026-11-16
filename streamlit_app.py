@@ -52,6 +52,10 @@ h1,h2,h3 { letter-spacing:-.04em; }
 .cg-card { background:linear-gradient(145deg,#19232d,#151e27);border:1px solid var(--cg-border);border-radius:14px;padding:18px 20px;margin-bottom:12px; }
 .cg-auth-hero { max-width:560px;margin:8vh auto 0;text-align:center; }
 .cg-auth-badge { width:58px;height:58px;display:grid;place-items:center;margin:0 auto 16px;border-radius:18px;background:#56d7b71a;border:1px solid #56d7b755;color:#56d7b7;font-size:28px; }
+.cg-team-list { display:grid;gap:7px;margin:10px 0 4px; }
+.cg-team-link { display:flex;align-items:center;justify-content:space-between;padding:9px 11px;border:1px solid var(--cg-border);border-radius:9px;background:#171f29;color:#dce6e8!important;text-decoration:none!important;font-size:12px;font-weight:700;transition:border-color .16s ease,transform .16s ease; }
+.cg-team-link:hover { border-color:#56d7b777;transform:translateX(2px); }
+.cg-team-link span { color:#56d7b7;font-family:'DM Mono',monospace;font-size:10px; }
 .cg-metric { background:linear-gradient(145deg,#19232d,#151e27);border:1px solid var(--cg-border);border-radius:14px;padding:18px 20px;min-height:125px; }
 .cg-metric-label { color:var(--cg-muted);font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase; }
 .cg-metric-value { font-size:30px;font-weight:800;letter-spacing:-.05em;margin-top:12px; }
@@ -476,6 +480,15 @@ with st.sidebar:
         st.caption(f"@{st.session_state.auth_username}")
         st.button("Open my profile", use_container_width=True, on_click=set_page, args=("Profile",))
         st.button("Sign out", use_container_width=True, on_click=sign_out)
+    st.markdown("---")
+    st.markdown("""
+    <div class='cg-eyebrow'>PROJECT TEAM / GITHUB</div>
+    <div class='cg-team-list'>
+      <a class='cg-team-link' href='https://github.com/vaibhavrxj' target='_blank'>Vaibhav Raj <span>@vaibhavrxj ↗</span></a>
+      <a class='cg-team-link' href='https://github.com/AnieeD' target='_blank'>AnieeD <span>@AnieeD ↗</span></a>
+      <a class='cg-team-link' href='https://github.com/akhilpanwar873' target='_blank'>Akhil Panwar <span>@akhilpanwar873 ↗</span></a>
+    </div>
+    """, unsafe_allow_html=True)
     st.markdown("---")
     st.markdown("<div class='cg-eyebrow'>MODEL / ANALYTICS</div><p style='font-size:12px;color:#56d7b7'>● Telemetry workspace ready</p><p style='font-size:11px;color:#96a6ac'>Isolation Forest · unsupervised anomaly scoring</p>", unsafe_allow_html=True)
     if st.button("↻  Clear loaded logs", use_container_width=True):
