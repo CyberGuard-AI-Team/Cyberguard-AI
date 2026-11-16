@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import csv
-import base64
 import hashlib
 import html
 import hmac
@@ -462,12 +461,46 @@ def local_db() -> sqlite3.Connection:
 
 
 def downloadable_collector_script() -> str:
+    """Return the local-only PowerShell collector embedded in the CMD download."""
     return r'''# CyberGuard AI Windows Log Collector
-# This script asks for Administrator permission and creates a CSV on your Desktop.
 param([int]$Days = 7)
 
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+$warnings = [System.Collections.Generic.List[string]]::new()
+
+function Find-OutputFolder {
+  $candidates = [System.Collections.Generic.List[string]]::new()
+  try {
+    $value = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders' -Name Desktop -ErrorAction Stop).Desktop
+    if ($value) { $candidates.Add([Environment]::ExpandEnvironmentVariables($value)) }
+  } catch {}
+  $desktop = [Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop)
+  if ($desktop) { $candidates.Add($desktop) }
+  if ($env:OneDrive) { $candidates.Add((Join-Path $env:OneDrive 'Desktop')) }
+  if ($env:OneDriveCommercial) { $candidates.Add((Join-Path $env:OneDriveCommercial 'Desktop')) }
+  if ($env:USERPROFILE) {
+    $candidates.Add((Join-Path $env:USERPROFILE 'Desktop'))
+    $candidates.Add((Join-Path $env:USERPROFILE 'Downloads'))
+    $candidates.Add((Join-Path $env:USERPROFILE 'Documents'))
+  }
+  $candidates.Add($env:TEMP)
+  foreach ($candidate in @($candidates | Select-Object -Unique)) {
+    if ([string]::IsNullOrWhiteSpace($candidate) -or -not (Test-Path -LiteralPath $candidate -PathType Container)) { continue }
+    try {
+      $probe = Join-Path $candidate ('.cyberguard-write-test-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+      [IO.File]::WriteAllText($probe, 'ok')
+      Remove-Item -LiteralPath $probe -Force
+      return (Resolve-Path -LiteralPath $candidate).Path
+    } catch {}
+  }
+  throw 'CyberGuard could not find a writable Desktop, Downloads, or Documents folder.'
+}
+
 try {
+  $outputFolder = Find-OutputFolder
+  $csvPath = Join-Path $outputFolder 'cyberguard-real-logs.csv'
+  $statusPath = Join-Path $outputFolder 'cyberguard-collector-status.txt'
   $since = (Get-Date).AddDays(-$Days)
   $labels = @{4624='Successful Login';4625='Failed Login';4672='Privilege Change';4688='Process Start';4697='Service Installation'}
   $rows = [System.Collections.Generic.List[object]]::new()
@@ -475,47 +508,135 @@ try {
     if ($channel -eq 'Security') {
       $filter = @{LogName='Security'; Id=@(4624,4625,4672,4688,4697); StartTime=$since}
     } else {
-      $filter = @{LogName=$channel; Level=@(1,2); StartTime=$since}
+      $filter = @{LogName=$channel; Level=@(1,2,3); StartTime=$since}
     }
-    foreach ($event in @(Get-WinEvent -FilterHashtable $filter -MaxEvents 500 -ErrorAction SilentlyContinue)) {
-      $eventType = if ($labels.ContainsKey([int]$event.Id)) {$labels[[int]$event.Id]} elseif ($channel -eq 'System') {'System Event'} else {'Application Event'}
-      $severity = if ($event.Id -eq 4625 -or $event.Id -eq 4697) {'Medium'} elseif ($event.Id -eq 4672 -or $event.Level -eq 2) {'High'} elseif ($event.Level -eq 1) {'Critical'} else {'Low'}
-      $status = if ($event.Id -eq 4625) {'Failed'} elseif ($event.Id -eq 4624) {'Success'} else {'Observed'}
-      try {$user = $event.UserId.Translate([System.Security.Principal.NTAccount]).Value} catch {$user = 'unknown'}
-      $message = ([string]$event.Message -replace "[`r`n]+", ' ')
-      $ip = if ($message -match '(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)') {$Matches[0]} else {'unknown'}
-      $rows.Add([PSCustomObject]@{timestamp=$event.TimeCreated.ToUniversalTime().ToString('o');eventId=[string]$event.Id;eventType=$eventType;user=$user;sourceIp=$ip;destinationIp='unknown';severity=$severity;status=$status;description=$message})
+    try { $channelEvents = @(Get-WinEvent -FilterHashtable $filter -MaxEvents 750 -ErrorAction Stop) }
+    catch {
+      $warnings.Add("$channel log: $($_.Exception.Message)")
+      continue
+    }
+    foreach ($event in $channelEvents) {
+      try {
+        $eventId = [int]$event.Id
+        $eventType = if ($labels.ContainsKey($eventId)) {$labels[$eventId]} elseif ($channel -eq 'System') {'System Event'} else {'Application Event'}
+        $severity = if ($eventId -eq 4625 -or $eventId -eq 4697) {'Medium'} elseif ($eventId -eq 4672 -or $event.Level -eq 2) {'High'} elseif ($event.Level -eq 1) {'Critical'} elseif ($event.Level -eq 3) {'Medium'} else {'Low'}
+        $status = if ($eventId -eq 4625) {'Failed'} elseif ($eventId -eq 4624) {'Success'} else {'Observed'}
+        $user = 'unknown'
+        if ($null -ne $event.UserId) { try {$user = $event.UserId.Translate([System.Security.Principal.NTAccount]).Value} catch {} }
+        try { $message = [string]$event.FormatDescription() } catch { $message = '' }
+        $message = ($message -replace "[`r`n]+", ' ').Trim()
+        if ([string]::IsNullOrWhiteSpace($message)) { $message = "Windows $channel event $eventId from $($event.ProviderName)." }
+        $ip = if ($message -match '(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)') {$Matches[0]} else {'unknown'}
+        $eventTime = if ($null -ne $event.TimeCreated) {$event.TimeCreated.ToUniversalTime()} else {(Get-Date).ToUniversalTime()}
+        $rows.Add([PSCustomObject]@{timestamp=$eventTime.ToString('o');eventId=[string]$eventId;eventType=$eventType;user=$user;sourceIp=$ip;destinationIp='unknown';severity=$severity;status=$status;description=$message})
+      } catch {
+        $warnings.Add("Skipped one $channel event: $($_.Exception.Message)")
+      }
     }
   }
-  if ($rows.Count -eq 0) { throw 'No matching Windows events were found in the selected time period.' }
-  $desktop = [Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop)
-  $path = Join-Path $desktop 'cyberguard-real-logs.csv'
-  $rows | Export-Csv $path -NoTypeInformation -Encoding UTF8
-  Write-Host "SUCCESS: $($rows.Count) logs saved to:" -ForegroundColor Green
-  Write-Host $path -ForegroundColor Cyan
+
+  if ($rows.Count -gt 0) {
+    $rows | Sort-Object timestamp -Descending | Export-Csv -LiteralPath $csvPath -NoTypeInformation -Encoding UTF8
+  } else {
+    'timestamp,eventId,eventType,user,sourceIp,destinationIp,severity,status,description' | Set-Content -LiteralPath $csvPath -Encoding UTF8
+  }
+
+  $summary = @(
+    'CyberGuard AI Windows Log Collector',
+    "Completed: $(Get-Date -Format 'dd MMM yyyy, hh:mm:ss tt')",
+    "Records collected: $($rows.Count)",
+    "CSV file: $csvPath"
+  )
+  if ($warnings.Count -gt 0) { $summary += ''; $summary += 'Non-fatal notes:'; $summary += $warnings }
+  $summary | Set-Content -LiteralPath $statusPath -Encoding UTF8
+
+  Write-Host ''
+  Write-Host "SUCCESS: $($rows.Count) real Windows event records collected." -ForegroundColor Green
+  Write-Host 'Your CSV file is here:' -ForegroundColor White
+  Write-Host $csvPath -ForegroundColor Cyan
+  if ($outputFolder -like '*\Downloads') { Write-Host 'Desktop was not writable, so the file was saved in Downloads.' -ForegroundColor Yellow }
+  if ($rows.Count -eq 0) { Write-Host 'The CSV has headers only. Read the status file to see which Windows logs were unavailable.' -ForegroundColor Yellow }
+  Write-Host "Status details: $statusPath" -ForegroundColor DarkGray
+  try { Start-Process explorer.exe -ArgumentList "/select,`"$csvPath`"" } catch {}
+  exit 0
 } catch {
+  $fallbackStatus = Join-Path $env:TEMP 'cyberguard-collector-error.txt'
+  $errorText = @(
+    'CyberGuard AI collector could not finish.',
+    "Time: $(Get-Date -Format 'dd MMM yyyy, hh:mm:ss tt')",
+    "Error: $($_.Exception.Message)",
+    'Run the downloaded CMD file again and accept the Administrator prompt.'
+  )
+  try { $errorText | Set-Content -LiteralPath $fallbackStatus -Encoding UTF8 } catch {}
   Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
-  Write-Host 'Try again after accepting the Administrator permission prompt.' -ForegroundColor Yellow
-} finally {
-  Read-Host 'Press Enter to close this window'
+  Write-Host 'This window will stay open. Take a screenshot of this error if you need help.' -ForegroundColor Yellow
+  Write-Host "Diagnostic file: $fallbackStatus" -ForegroundColor Cyan
+  exit 1
 }
 '''
 
 
 def downloadable_collector_launcher() -> str:
-    encoded = base64.b64encode(downloadable_collector_script().encode("utf-8")).decode("ascii")
-    return f'''@echo off
+    """Return a hybrid CMD/PowerShell launcher without command-length limits."""
+    launcher = r'''@echo off
+setlocal EnableExtensions DisableDelayedExpansion
 title CyberGuard AI Windows Log Collector
-powershell.exe -NoProfile -Command "if (([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {{ exit 0 }} else {{ exit 1 }}"
+color 0B
+
+if /I "%~1"=="elevated" goto collect
+powershell.exe -NoProfile -Command "if (([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { exit 0 } else { exit 1 }"
+if not errorlevel 1 goto collect
+
+echo CyberGuard needs Administrator permission to read Windows Event Logs.
+echo Select YES in the Windows prompt.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -ArgumentList 'elevated' -WorkingDirectory '%~dp0' -Verb RunAs -Wait"
 if errorlevel 1 (
-  powershell.exe -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
-  exit /b
+  echo.
+  echo ERROR: Administrator permission was cancelled or the elevated collector could not start.
+  echo Download the file again, then right-click it and select Run as administrator.
+  echo.
+  pause
+  exit /b 1
 )
-set "collector=%TEMP%\\cyberguard-log-collector.ps1"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$bytes=[System.Convert]::FromBase64String('{encoded}');[System.IO.File]::WriteAllBytes($env:TEMP + '\\cyberguard-log-collector.ps1',$bytes)"
+exit /b 0
+
+:collect
+cls
+echo ================================================================
+echo              CYBERGUARD AI WINDOWS LOG COLLECTOR
+echo ================================================================
+echo.
+echo Reading selected Security, System, and Application events...
+echo This can take 1 to 3 minutes. Do not close this window.
+echo.
+
+set "collector=%TEMP%\cyberguard-log-collector.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$content=Get-Content -LiteralPath '%~f0'; $marker=[Array]::IndexOf($content,'REM_CYBERGUARD_POWERSHELL_PAYLOAD'); if($marker -lt 0){throw 'Collector payload was not found.'}; [IO.File]::WriteAllLines($env:TEMP+'\cyberguard-log-collector.ps1',$content[($marker+1)..($content.Length-1)],(New-Object Text.UTF8Encoding($true)))"
+if errorlevel 1 (
+  echo ERROR: The collector script could not be prepared.
+  echo Delete this file, download a fresh copy from CyberGuard, and try again.
+  echo.
+  pause
+  exit /b 1
+)
+
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%collector%"
-pause
+set "collectorExit=%errorlevel%"
+echo.
+if "%collectorExit%"=="0" (
+  echo File Explorer should now be showing cyberguard-real-logs.csv.
+) else (
+  echo Collection did not finish. Read the ERROR message above.
+)
+echo.
+echo Press any key to close this window.
+pause >nul
+exit /b %collectorExit%
+
+REM_CYBERGUARD_POWERSHELL_PAYLOAD
+__POWERSHELL_PAYLOAD__
 '''
+    return launcher.replace("__POWERSHELL_PAYLOAD__", downloadable_collector_script()).replace("\n", "\r\n")
 
 
 def browser_case_workspace(findings: list[dict]) -> None:
@@ -1194,12 +1315,15 @@ ConvertTo-Json -InputObject @($output) -Depth 4 -Compress
         st.write("The collector uses Windows PowerShell's Get-WinEvent on this computer. It does not upload, persist, or transmit the records. Closing the local app session clears them.")
     else:
         st.markdown("### Get real Windows logs")
-        st.write("Download the launcher, double-click it once on your Windows PC, then upload the created CSV in **Activity history**.")
-        st.download_button("Download & Run Windows Log Collector", downloadable_collector_launcher(), "cyberguard-log-collector.cmd", "text/plain", type="primary", use_container_width=True)
+        st.write("Download the fixed launcher, run it once on your Windows PC, then upload the created CSV in **Activity history**.")
+        st.download_button("Download fixed Windows Log Collector", downloadable_collector_launcher(), "cyberguard-log-collector-fixed.cmd", "application/octet-stream", type="primary", use_container_width=True)
         with st.container(border=True):
             st.markdown("### How to use this file")
-            st.markdown("1. Download the new `cyberguard-log-collector.cmd` file above.\n2. Open your **Downloads** folder.\n3. Double-click `cyberguard-log-collector.cmd`. Do not use the old `.ps1` file.\n4. When Windows asks for Administrator permission, select **Yes**.\n5. Wait for the green **SUCCESS** message and the CSV location. The window stays open.\n6. Press Enter to close it.\n7. Open the displayed location, usually your Desktop, and find `cyberguard-real-logs.csv`.\n8. Return here, open **Activity history**, upload the CSV, then use **Check my activity**.")
-        st.caption("The launcher requests Administrator permission automatically and keeps the result window open. If it cannot create the CSV, it shows the reason in red.")
+            st.markdown("1. Delete any older CyberGuard collector from **Downloads** so you do not run the wrong copy.\n2. Download `cyberguard-log-collector-fixed.cmd` above.\n3. Open **Downloads**, right-click the new file, and choose **Run as administrator**.\n4. Select **Yes** in the Windows permission prompt.\n5. Wait for the green **SUCCESS** message. Collection can take 1–3 minutes.\n6. File Explorer opens automatically and selects `cyberguard-real-logs.csv`.\n7. The preferred save location is your real Desktop, including a OneDrive Desktop. If Desktop is not writable, the collector uses **Downloads**, then **Documents**.\n8. Return here, open **Activity history**, upload the CSV, then use **Check my activity**.")
+        st.info("The CSV is a normal spreadsheet file and opens in Excel. A second file named `cyberguard-collector-status.txt` records the exact save path and any Windows logs that could not be read.")
+        with st.expander("If the CSV still does not appear"):
+            st.markdown("- Keep the black collector window open and read the final green or red message.\n- Search File Explorer for `cyberguard-real-logs.csv`.\n- Check **Desktop**, **OneDrive → Desktop**, **Downloads**, and **Documents**.\n- If you see a red error, take a screenshot. A diagnostic copy is also saved as `%TEMP%\\cyberguard-collector-error.txt`.\n- Do not rename the file to `.xlsx`; upload the generated `.csv` file directly.")
+        st.caption("This fixed launcher skips individual unreadable event messages instead of cancelling the whole export, detects redirected OneDrive desktops, and keeps the result window open.")
     st.markdown("### Live monitoring")
     st.write("This is a one-time collection. It does not run in the background, stream events continuously, or take response actions.")
 
