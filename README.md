@@ -5,7 +5,7 @@
 [![Live App](https://img.shields.io/badge/Live_App-Open_CyberGuard-56d7b7?style=for-the-badge&logo=streamlit&logoColor=white)](https://cyberguard-ai-team.streamlit.app/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.40%2B-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io/)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
-[![scikit-learn](https://img.shields.io/badge/ML-Isolation_Forest-F7931E?style=for-the-badge&logo=scikitlearn&logoColor=white)](https://scikit-learn.org/)
+[![Hybrid AI](https://img.shields.io/badge/AI-ML_%2B_Deep_Learning-7C3AED?style=for-the-badge)](https://pytorch.org/)
 
 CyberGuard AI is an M.Tech cybersecurity analytics project that helps people collect or upload real Windows activity logs, identify suspicious sign-in patterns, find unusual events with machine learning, and understand the results in clear everyday language.
 
@@ -23,7 +23,7 @@ CyberGuard AI is an M.Tech cybersecurity analytics project that helps people col
 - [How CyberGuard works](#how-cyberguard-works)
 - [Main features](#main-features)
 - [Detection logic](#detection-logic)
-- [Machine-learning model](#machine-learning-model)
+- [Hybrid ML and deep-learning engine](#hybrid-ml-and-deep-learning-engine)
 - [Windows events collected](#windows-events-collected)
 - [Using the hosted website](#using-the-hosted-website)
 - [Running locally](#running-locally)
@@ -57,7 +57,7 @@ flowchart LR
     B --> E[cyberguard-real-logs.csv]
     E --> D
     D --> F[Rule-based Check]
-    D --> G[Isolation Forest ML]
+    D --> G[Hybrid ML and deep-learning ensemble]
     F --> H[Plain-language Findings]
     G --> I[Unusual Activity Ranking]
     H --> J[Investigation Notes]
@@ -78,7 +78,7 @@ The hosted Streamlit application cannot directly inspect a visitor's computer. I
 | **What needs attention** | Converts technical rule matches into simple explanations and recommended actions. |
 | **My follow-ups** | Tracks case status, assignment, investigation notes, and downloadable case reports. |
 | **Activity summary** | Displays severity, event type, account, source, and time-based activity patterns. |
-| **Smart analysis** | Uses Isolation Forest to rank records that differ from the current activity baseline. |
+| **Smart analysis** | Combines Isolation Forest, Autoencoder, LSTM, Transformer, and BERT-style log analysis to rank unusual records. |
 | **Ask CyberGuard** | Answers supported questions using evidence already present in the workspace. |
 | **Connect my PC** | Downloads the Windows collector or reads selected Windows events directly when run locally. |
 | **About CyberGuard** | Explains the workflow, every feature, data handling, and result interpretation. |
@@ -101,17 +101,31 @@ The rule helps identify password guessing or brute-force-like behaviour. A match
 
 Typical recommendations include changing the password, signing out other sessions, enabling multi-factor authentication, and asking IT support to review the linked events.
 
-## Machine-learning model
+## Hybrid ML and deep-learning engine
 
-CyberGuard's **Smart analysis** page uses an unsupervised [Isolation Forest](https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.IsolationForest.html) model.
+CyberGuard's **Smart analysis** page combines one classical machine-learning model with four compact deep-learning models. Each model examines the same loaded records from a different point of view, and the ensemble combines their scores into one review priority.
 
-### Model configuration
+| Model | What it learns | What can raise its score |
+|---|---|---|
+| **Isolation Forest** | Rare combinations of structured log fields | An uncommon account, source, event type, severity, or time pattern |
+| **Autoencoder** | How normal structured events can be reconstructed | An event whose features cannot be reconstructed well |
+| **LSTM** | The expected next event based on recent event order | An event sequence that changes unexpectedly |
+| **Transformer** | Relationships across a recent window of events | A next event that does not match the wider sequence context |
+| **BERT-style log model** | Bidirectional context within log-description tokens | Unusual words or token combinations in an event message |
 
-- **Algorithm:** Isolation Forest
-- **Trees:** 200
+The BERT-style component is a small masked-language Transformer trained inside the current app session. It does not download a pretrained foundation model and does not send event descriptions to an external AI service.
+
+### Ensemble configuration
+
+- **Isolation Forest:** 25%
+- **Autoencoder:** 25%
+- **LSTM:** 20%
+- **Transformer:** 15%
+- **BERT-style log model:** 15%
 - **Random seed:** 42 for repeatable project demonstrations
-- **Minimum records in the UI:** 8
-- **Sensitivity / contamination:** 5%, 10%, or 20%
+- **Minimum records in the UI:** 8; 30 or more are recommended for a more useful experiment
+- **Sensitivity / review proportion:** 5%, 10%, or 20%
+- If one deep-learning model cannot run, available model weights are rebalanced automatically.
 
 ### Features used
 
@@ -125,7 +139,7 @@ CyberGuard's **Smart analysis** page uses an unsupervised [Isolation Forest](htt
 - One-hot encoded source IP
 - One-hot encoded event status
 
-Isolation Forest was selected because security datasets often do not have reliable attack labels. It can learn a baseline from the currently loaded records and identify rare combinations without requiring a pre-labelled training dataset.
+The system remains unsupervised/self-supervised because security datasets often do not have reliable attack labels. Isolation Forest and the Autoencoder learn the current structured baseline, the LSTM and Transformer learn event order, and the BERT-style model learns log-message context.
 
 The displayed anomaly score is a **relative ranking within the current uploaded dataset**. It is not a probability of hacking or compromise, and every result must be reviewed with its evidence.
 
@@ -233,6 +247,7 @@ Imported timestamps are normalized and displayed in Indian Standard Time (`IST`,
 | [Streamlit](https://streamlit.io/) | Interactive web interface and Community Cloud deployment |
 | [pandas](https://pandas.pydata.org/) | CSV/JSON processing, filtering, tables, and analytics |
 | [scikit-learn](https://scikit-learn.org/) | Isolation Forest anomaly detection |
+| [PyTorch](https://pytorch.org/) | Autoencoder, LSTM, Transformer, and BERT-style log model |
 | SQLite | Local account and investigation storage |
 | PowerShell | Windows Event Log collection with `Get-WinEvent` |
 | HTML/CSS/JavaScript | Styling, animations, and hosted browser-local investigation notes |
@@ -260,7 +275,8 @@ Python dependencies are listed in [`requirements.txt`](requirements.txt). Additi
 - Imported logs and scan results are session-scoped.
 - Hosted account storage is not a production-grade durable identity service.
 - The assistant is evidence- and keyword-based; it is not a general-purpose LLM chatbot.
-- The anomaly model has not been presented as an independently evaluated production threat classifier.
+- The hybrid models train on the current uploaded records and are not an independently evaluated production threat classifier.
+- Small datasets produce an exploratory classroom baseline; they do not represent a complete normal-behaviour history.
 - An unusual event is not automatically malicious.
 - CyberGuard does not block IP addresses, terminate processes, quarantine files, or remediate devices.
 
@@ -294,7 +310,7 @@ Python dependencies are listed in [`requirements.txt`](requirements.txt). Additi
 - Model evaluation with precision, recall, and F1-score
 - Feedback-driven false-positive reduction
 - Model versioning, drift monitoring, and explainable-AI reports
-- Sequence and time-series models for multi-event attacks
+- Evaluation against labelled public cybersecurity datasets and controlled attack scenarios
 
 ### Investigation and response
 
@@ -309,7 +325,9 @@ Python dependencies are listed in [`requirements.txt`](requirements.txt). Additi
 ```text
 Cyberguard-AI/
 ├── streamlit_app.py          # Current deployed Streamlit application
-├── requirements.txt          # Streamlit, pandas, and scikit-learn
+├── cyberguard_dl.py           # Autoencoder, LSTM, Transformer, and BERT-style models
+├── requirements.txt          # Streamlit, pandas, scikit-learn, and PyTorch
+├── runtime.txt               # Python runtime used by Streamlit Community Cloud
 ├── STREAMLIT.md              # Streamlit workflow and deployment notes
 ├── monitoring-agent/         # Separate Windows/Linux monitoring-agent prototype
 ├── artifacts/                # React UI and API-server project artifacts

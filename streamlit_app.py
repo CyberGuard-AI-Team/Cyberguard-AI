@@ -394,7 +394,7 @@ FEATURE_GUIDES = {
     "Findings": ("What needs attention", "Shows possible security concerns in plain language, along with the safest next action."),
     "Investigations": ("My follow-ups", "Keep a simple record of what you checked, who is handling it, and what should happen next."),
     "Analytics": ("Activity summary", "Shows patterns in your activity over time so you can spot changes without reading every record."),
-    "ML Lab": ("Smart analysis", "Uses an AI model to find activity that differs from the usual pattern and explains why it stood out."),
+    "ML Lab": ("Smart analysis", "Combines Isolation Forest, an Autoencoder, LSTM, Transformer, and a BERT-style log model to rank unusual activity and explain why it stood out."),
     "Assistant": ("Ask CyberGuard", "Ask everyday questions about the activity shown in this workspace and get a simple answer."),
     "Devices": ("Connect my PC", "When run locally on Windows, this can bring selected Windows Event Log activity into the workspace."),
 }
@@ -451,6 +451,82 @@ def anomaly_scores(events: list[dict], contamination: float) -> pd.DataFrame:
     result = frame[["id", "timestamp", "eventType", "user", "sourceIp", "severity", "anomaly_score", "model_label", "explanation"]].copy()
     result["timestamp"] = result["timestamp"].apply(local_time)
     return result.sort_values("anomaly_score", ascending=False)
+
+
+def hybrid_anomaly_scores(events: list[dict], contamination: float, progress=None) -> tuple[pd.DataFrame, list[dict]]:
+    """Merge the ML baseline with four compact deep-learning anomaly models."""
+    baseline = anomaly_scores(events, contamination).rename(columns={"anomaly_score": "isolation_forest_score"})
+    diagnostics = [{
+        "model": "Isolation Forest",
+        "family": "Classical unsupervised ML",
+        "status": "Completed",
+        "final_loss": None,
+        "records": len(events),
+        "note": "200 trees; retained as the explainable machine-learning baseline.",
+    }]
+    try:
+        from cyberguard_dl import DeepLearningUnavailable, deep_learning_scores
+
+        deep_scores, deep_diagnostics = deep_learning_scores(events, progress=progress)
+        diagnostics.extend(deep_diagnostics)
+        combined = baseline.merge(deep_scores, on="id", how="left")
+    except (ImportError, DeepLearningUnavailable, ValueError) as exc:
+        combined = baseline.copy()
+        diagnostics.append({
+            "model": "Deep-learning ensemble",
+            "family": "Autoencoder / LSTM / Transformer / BERT-style",
+            "status": "Unavailable",
+            "final_loss": None,
+            "records": len(events),
+            "note": str(exc),
+        })
+
+    score_weights = {
+        "isolation_forest_score": 0.25,
+        "autoencoder_score": 0.25,
+        "lstm_score": 0.20,
+        "transformer_score": 0.15,
+        "bert_score": 0.15,
+    }
+    available_scores = [column for column in score_weights if column in combined and combined[column].notna().any()]
+    weighted_total = pd.Series(0.0, index=combined.index)
+    available_weight = pd.Series(0.0, index=combined.index)
+    for column in available_scores:
+        valid = combined[column].notna()
+        weighted_total.loc[valid] += combined.loc[valid, column] * score_weights[column]
+        available_weight.loc[valid] += score_weights[column]
+    combined["anomaly_score"] = (weighted_total / available_weight.replace(0, 1)).clip(0, 100)
+
+    model_names = {
+        "isolation_forest_score": "Isolation Forest",
+        "autoencoder_score": "Autoencoder",
+        "lstm_score": "LSTM",
+        "transformer_score": "Transformer",
+        "bert_score": "BERT-style text model",
+    }
+    thresholds = {
+        column: combined[column].quantile(max(0.0, 1.0 - contamination))
+        for column in available_scores
+    }
+
+    def agreement(row: pd.Series) -> tuple[int, str]:
+        raised = [
+            model_names[column]
+            for column in available_scores
+            if pd.notna(row[column]) and row[column] >= thresholds[column] and row[column] > 0
+        ]
+        return len(raised), ", ".join(raised) if raised else "No individual model placed it in its highest-risk group"
+
+    agreements = combined.apply(agreement, axis=1)
+    combined["model_agreement"] = agreements.map(lambda value: value[0])
+    combined["models_raising"] = agreements.map(lambda value: value[1])
+    review_count = max(1, int(round(len(combined) * contamination)))
+    review_ids = set(combined.nlargest(review_count, "anomaly_score")["id"])
+    combined["model_label"] = combined["id"].map(lambda value: "Anomalous" if value in review_ids else "Baseline")
+    combined["explanation"] = combined.apply(
+        lambda row: f"{row['explanation']}; model agreement: {row['models_raising']}", axis=1
+    )
+    return combined.sort_values("anomaly_score", ascending=False), diagnostics
 
 
 def local_db() -> sqlite3.Connection:
@@ -804,11 +880,14 @@ with st.sidebar:
     """, unsafe_allow_html=True)
     st.markdown("---")
     model_copy = "Ready for uploaded activity" if not events else f"{len(events):,} records available"
-    st.markdown(f"<div class='cg-eyebrow'>MODEL / ANALYTICS</div><p style='font-size:12px;color:#48e39b'><span class='cg-live-dot'></span>{model_copy}</p><p style='font-size:11px;color:#8293ae'>Isolation Forest · unsupervised anomaly scoring</p>", unsafe_allow_html=True)
+    st.markdown(f"<div class='cg-eyebrow'>MODEL / ANALYTICS</div><p style='font-size:12px;color:#48e39b'><span class='cg-live-dot'></span>{model_copy}</p><p style='font-size:11px;color:#8293ae'>Isolation Forest + four deep-learning models</p>", unsafe_allow_html=True)
     if st.button("↻  Clear loaded logs", use_container_width=True):
         st.session_state.events = []
         st.session_state.findings = []
         st.session_state.scans = []
+        st.session_state.pop("ml_results", None)
+        st.session_state.pop("ml_diagnostics", None)
+        st.session_state.pop("ml_event_signature", None)
         st.rerun()
     st.markdown("<br><div class='cg-eyebrow'>CYBERGUARD / 0.1<br>LOCAL LAB</div>", unsafe_allow_html=True)
 
@@ -909,7 +988,7 @@ elif page == "About CyberGuard":
             st.markdown(f"<div class='cg-card'><b>{title}</b><div style='color:#aebdc2;font-size:13px;margin-top:7px'>{description}</div></div>", unsafe_allow_html=True)
     with data:
         st.markdown("### What happens when you use CyberGuard")
-        st.markdown("**Activity history** works with the records in the current workspace. **Check my activity** uses clear security rules to look for sign-in patterns. **Smart analysis** uses an Isolation Forest model to rank records that differ from the current activity pattern. **What needs attention** turns those results into plain language.\n\nWhen you use the hosted app, follow-up notes are saved in your browser and can be downloaded as a CSV file. Windows Event Log collection is available only when the project runs locally on a Windows computer.")
+        st.markdown("**Activity history** works with the records in the current workspace. **Check my activity** uses clear security rules to look for sign-in patterns. **Smart analysis** combines Isolation Forest with Autoencoder, LSTM, Transformer, and BERT-style models to rank records that differ from the current activity pattern. **What needs attention** turns those results into plain language.\n\nWhen you use the hosted app, follow-up notes are saved in your browser and can be downloaded as a CSV file. Windows Event Log collection is available only when the project runs locally on a Windows computer.")
         st.info("CyberGuard helps you decide what to review first. For an unfamiliar sign-in or a possible account issue, change the password and contact your IT support team.")
 
 elif page == "Overview":
@@ -1192,34 +1271,68 @@ elif page == "Analytics":
             st.caption("Times are shown in Indian Standard Time (IST, UTC+05:30). Hover over the plot to inspect values.")
 
 elif page == "ML Lab":
-    st.caption("CyberGuard looks for activity that is different from the usual pattern, then explains why it deserves a closer look.")
+    st.caption("CyberGuard combines one machine-learning model with four deep-learning models, then explains which activity deserves a closer look.")
     if len(events) < 8:
-        st.info("Add at least 8 event records to create an anomaly baseline.")
+        st.info("Add at least 8 event records to create the ML and deep-learning baselines. Thirty or more records produce a more useful classroom experiment.")
     else:
+        current_event_signature = tuple(str(event.get("id", "")) for event in events)
+        if st.session_state.get("ml_event_signature") != current_event_signature:
+            st.session_state.pop("ml_results", None)
+            st.session_state.pop("ml_diagnostics", None)
         c1, c2 = st.columns([2, 1])
         sensitivity = c1.select_slider("How much should CyberGuard flag?", options=["Only unusual", "Balanced", "Show more"], value="Balanced")
         contamination = {"Only unusual": 0.05, "Balanced": 0.10, "Show more": 0.20}[sensitivity]
         c2.metric("Activity reviewed", len(events))
-        if st.button("Find unusual activity", type="primary", use_container_width=True):
-            st.session_state.ml_results = anomaly_scores(events, contamination)
-            st.session_state.ml_sensitivity = sensitivity
+        st.markdown("<div class='cg-card'><div class='cg-eyebrow'>HYBRID INTELLIGENCE</div><div style='font-size:13px;margin-top:8px;color:#b8c5d8'><b>Machine Learning:</b> Isolation Forest &nbsp;·&nbsp; <b>Deep Learning:</b> Autoencoder, LSTM, Transformer and BERT-style log language model</div></div>", unsafe_allow_html=True)
+        if st.button("Run ML + deep-learning analysis", type="primary", use_container_width=True):
+            progress_bar = st.progress(0, text="Preparing the hybrid analysis…")
+
+            def update_model_progress(model_name: str, fraction: float) -> None:
+                progress_bar.progress(min(100, int(fraction * 100)), text=f"Training {model_name} on the current logs…")
+
+            with st.spinner("The deep-learning models are training inside this app session. This can take a short time."):
+                st.session_state.ml_results, st.session_state.ml_diagnostics = hybrid_anomaly_scores(
+                    events, contamination, progress=update_model_progress
+                )
+                st.session_state.ml_sensitivity = sensitivity
+                st.session_state.ml_event_signature = current_event_signature
+            progress_bar.progress(100, text="Hybrid analysis complete")
         results = st.session_state.get("ml_results")
         if results is None:
-            st.info("Choose “Find unusual activity” to get a simple list of items worth checking first.")
+            st.info("Choose “Run ML + deep-learning analysis” to train the five-model ensemble and get a simple review list.")
         else:
             anomalies = results[results["model_label"] == "Anomalous"]
             if anomalies.empty:
                 st.success("Nothing looked unusual in this activity set.")
             else:
-                st.warning("Some activity looks different from the usual pattern. Review the items below first.")
+                st.warning("The hybrid model found activity that differs from the current baseline. Review these records; this is not proof of an attack.")
             st.markdown("### Things to review first")
             display = results.copy()
             display["Priority"] = display["model_label"].map({"Anomalous": "Review first", "Baseline": "Normal pattern"})
-            display = display.rename(columns={"timestamp": "When", "eventType": "What happened", "user": "Account", "sourceIp": "Source IP", "severity": "Importance", "explanation": "Why it stands out"})[["Priority", "When", "What happened", "Account", "Importance", "Why it stands out"]]
+            display = display.rename(columns={"timestamp": "When", "eventType": "What happened", "user": "Account", "sourceIp": "Source IP", "severity": "Importance", "explanation": "Why it stands out", "model_agreement": "Models agreeing"})[["Priority", "When", "What happened", "Account", "Importance", "Models agreeing", "Why it stands out"]]
             st.dataframe(display, use_container_width=True, hide_index=True)
             st.download_button("Download this review list (CSV)", display.to_csv(index=False), "cyberguard-review-list.csv", "text/csv")
+            diagnostics = st.session_state.get("ml_diagnostics", [])
+            if diagnostics:
+                completed = sum(item.get("status") == "Completed" for item in diagnostics)
+                metric_columns = st.columns(3)
+                metric_columns[0].metric("Models completed", f"{completed} / 5")
+                metric_columns[1].metric("Review-first records", int((results["model_label"] == "Anomalous").sum()))
+                metric_columns[2].metric("Highest ensemble score", f"{results['anomaly_score'].max():.1f} / 100")
+            with st.expander("Compare each model's score"):
+                score_columns = [column for column in ["isolation_forest_score", "autoencoder_score", "lstm_score", "transformer_score", "bert_score", "anomaly_score"] if column in results]
+                score_labels = {"id": "Record ID", "eventType": "Activity", "isolation_forest_score": "Isolation Forest", "autoencoder_score": "Autoencoder", "lstm_score": "LSTM", "transformer_score": "Transformer", "bert_score": "BERT-style", "anomaly_score": "Combined score"}
+                score_table = results[["id", "eventType", *score_columns]].rename(columns=score_labels).copy()
+                numeric_score_columns = [label for label in score_labels.values() if label in score_table and label not in ("Record ID", "Activity")]
+                score_table[numeric_score_columns] = score_table[numeric_score_columns].round(2)
+                st.dataframe(score_table, use_container_width=True, hide_index=True)
             with st.expander("Technical details for your M.Tech project"):
-                st.markdown("**Algorithm:** Isolation Forest with 200 trees and a fixed random seed for repeatable classroom demonstrations.\n\n**Features:** hour of event, severity weight, frequency of the event type, account, and source address, plus one-hot encoded event type, account, source address, and status.\n\n**Interpretation:** the anomaly score is a relative rank within the records currently loaded into the app. It is not a probability of compromise, and results should be reviewed with the linked evidence.")
+                st.markdown("**Machine-learning baseline:** Isolation Forest with 200 trees.\n\n**Autoencoder:** reconstructs structured event features; high reconstruction error raises the review score.\n\n**LSTM:** predicts the next structured event from the preceding event window; high prediction error indicates an unusual sequence.\n\n**Transformer:** uses self-attention over the recent event window and independently predicts the next event representation.\n\n**BERT-style log model:** uses a compact bidirectional Transformer and masked-token prediction over event descriptions. It is trained from the current workspace and does not send log text to an external AI service.\n\n**Ensemble weights:** Isolation Forest 25%, Autoencoder 25%, LSTM 20%, Transformer 15%, BERT-style text model 15%. Weights are rebalanced automatically if a model cannot run.\n\n**Interpretation:** every score is a relative priority within the records currently loaded. It is not a probability of compromise and it is not proof of an attack.")
+                diagnostics = st.session_state.get("ml_diagnostics", [])
+                if diagnostics:
+                    diagnostic_frame = pd.DataFrame(diagnostics).rename(columns={"model": "Model", "family": "Method", "status": "Status", "final_loss": "Final training loss", "records": "Records", "note": "Notes"})
+                    diagnostic_frame["Final training loss"] = pd.to_numeric(diagnostic_frame["Final training loss"], errors="coerce").round(5)
+                    st.dataframe(diagnostic_frame, use_container_width=True, hide_index=True)
 
 elif page == "Assistant":
     st.caption("Ask a question in everyday language. CyberGuard will explain the activity shown in this workspace.")
