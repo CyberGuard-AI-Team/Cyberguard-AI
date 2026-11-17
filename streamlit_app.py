@@ -13,6 +13,7 @@ import subprocess
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -203,7 +204,12 @@ footer { visibility:hidden; }
 
 def auth_db() -> sqlite3.Connection:
     """Open the small local account store used by this Streamlit application."""
-    conn = sqlite3.connect("cyberguard-users.db")
+    # Anchor the database to this file instead of the process working directory.
+    # Streamlit can launch an app from different working directories locally and
+    # in the cloud; using a stable path prevents valid accounts from appearing to
+    # vanish merely because the launch directory changed.
+    db_path = Path(__file__).resolve().with_name("cyberguard-users.db")
+    conn = sqlite3.connect(db_path, timeout=10)
     conn.execute("""CREATE TABLE IF NOT EXISTS users (
         username TEXT PRIMARY KEY,
         display_name TEXT NOT NULL,
@@ -230,14 +236,25 @@ def password_matches(password: str, stored: str) -> bool:
         return False
 
 
+def password_policy_error(password: str) -> str | None:
+    """Return a friendly validation message shared by sign-up and password change."""
+    if len(password) < 8:
+        return "Use at least 8 characters."
+    if "@" not in password:
+        return "Include the @ symbol in your password."
+    if not any(character.isdigit() for character in password):
+        return "Include at least one number in your password."
+    return None
+
+
 def create_account(display_name: str, username: str, password: str) -> tuple[bool, str]:
     display_name, username = display_name.strip(), username.strip().lower()
     if len(display_name) < 2:
         return False, "Enter the name you want to show on your profile."
     if not re.fullmatch(r"[a-z0-9._-]{3,32}", username):
         return False, "Username must be 3–32 characters: letters, numbers, dot, underscore, or hyphen."
-    if len(password) < 8:
-        return False, "Choose a password with at least 8 characters."
+    if policy_error := password_policy_error(password):
+        return False, policy_error
     conn = auth_db()
     try:
         conn.execute(
@@ -252,13 +269,15 @@ def create_account(display_name: str, username: str, password: str) -> tuple[boo
     return True, username
 
 
-def authenticate(username: str, password: str) -> tuple[bool, str, str]:
+def authenticate(username: str, password: str) -> tuple[bool, str, str, str]:
     conn = auth_db()
     row = conn.execute("SELECT username, display_name, password_hash FROM users WHERE username=?", (username.strip().lower(),)).fetchone()
     conn.close()
-    if row and password_matches(password, row[2]):
-        return True, row[0], row[1]
-    return False, "", ""
+    if not row:
+        return False, "", "", "account_not_found"
+    if not password_matches(password, row[2]):
+        return False, "", "", "password_mismatch"
+    return True, row[0], row[1], "ok"
 
 
 def current_user() -> tuple[str, str, str] | None:
@@ -284,8 +303,8 @@ def update_profile(username: str, display_name: str, about: str) -> tuple[bool, 
 
 
 def change_password(username: str, current_password: str, new_password: str) -> tuple[bool, str]:
-    if len(new_password) < 8:
-        return False, "Your new password needs at least 8 characters."
+    if policy_error := password_policy_error(new_password):
+        return False, policy_error
     conn = auth_db()
     row = conn.execute("SELECT password_hash FROM users WHERE username=?", (username,)).fetchone()
     if not row or not password_matches(current_password, row[0]):
@@ -317,19 +336,23 @@ def show_auth_page() -> None:
                 password = st.text_input("Password", type="password", placeholder="Your password")
                 submitted = st.form_submit_button("Sign in", type="primary", use_container_width=True)
             if submitted:
-                valid, verified_username, display_name = authenticate(username, password)
+                valid, verified_username, display_name, reason = authenticate(username, password)
                 if valid:
                     st.session_state.authenticated = True
                     st.session_state.auth_username = verified_username
                     st.session_state.auth_display_name = display_name
                     st.rerun()
-                st.error("Username or password is incorrect.")
+                if reason == "account_not_found":
+                    st.error("No saved account was found for that username.")
+                    st.info("If you created this account before the latest Streamlit deployment, its local demo record may have been cleared. Select **Create account** once to save it again.")
+                else:
+                    st.error("The password does not match this account. Check Caps Lock and enter the exact password you created.")
             st.caption("New here? Select **Create account** above.")
         else:
             with st.form("create-account-form"):
                 display_name = st.text_input("Your name", placeholder="How should CyberGuard address you?")
                 username = st.text_input("Choose a username", placeholder="e.g. rahul.sharma")
-                password = st.text_input("Create password", type="password", placeholder="At least 8 characters")
+                password = st.text_input("Create password", type="password", placeholder="8+ characters with @ and a number")
                 confirm_password = st.text_input("Confirm password", type="password")
                 submitted = st.form_submit_button("Create account", type="primary", use_container_width=True)
             if submitted:
@@ -344,7 +367,7 @@ def show_auth_page() -> None:
                         st.rerun()
                     st.error(result)
             st.caption("Already have an account? Select **Sign in** above.")
-        st.caption("Use a unique practice password for this project; do not reuse a work or banking password.")
+        st.caption("Password rule: 8+ characters, the @ symbol, and at least one number. Use a unique practice password; do not reuse a work or banking password.")
 
 
 def findings_from_events(events: list[dict]) -> list[dict]:
