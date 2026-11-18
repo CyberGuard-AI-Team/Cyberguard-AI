@@ -1272,7 +1272,82 @@ elif page == "Findings":
 elif page == "Investigations":
     st.caption("Track findings, assign ownership, record investigation notes, and export case reports.")
     if os.name != "nt":
-        browser_case_workspace(findings)
+        if "hosted_cases" not in st.session_state:
+            st.session_state.hosted_cases = {}
+
+        cases = st.session_state.hosted_cases
+        for finding in findings:
+            case_id = f"case-{finding['id']}"
+            if case_id not in cases:
+                cases[case_id] = {
+                    "Case ID": case_id,
+                    "Finding": finding["title"],
+                    "Status": "New",
+                    "Assigned to": "Unassigned",
+                    "Notes": "",
+                    "Updated (IST)": local_time(datetime.now(timezone.utc)),
+                }
+
+        with st.expander("＋ Add a follow-up manually", expanded=not bool(cases)):
+            manual_title = st.text_input("What do you want to follow up?", key="manual-case-title", placeholder="For example: Check an unfamiliar sign-in")
+            manual_owner = st.text_input("Assigned to", key="manual-case-owner", placeholder="Name or team")
+            if st.button("Add follow-up", type="primary", key="add-manual-case"):
+                if not manual_title.strip():
+                    st.warning("Enter a short follow-up title first.")
+                else:
+                    case_id = f"manual-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
+                    cases[case_id] = {
+                        "Case ID": case_id,
+                        "Finding": manual_title.strip(),
+                        "Status": "New",
+                        "Assigned to": manual_owner.strip() or "Unassigned",
+                        "Notes": "",
+                        "Updated (IST)": local_time(datetime.now(timezone.utc)),
+                    }
+                    st.success("Follow-up added.")
+                    st.rerun()
+
+        if not cases:
+            st.info("No follow-ups yet. Add one above, or import logs and open a finding first.")
+
+        for case_id, case in list(cases.items()):
+            with st.container(border=True):
+                st.markdown(f"### {case['Finding']}")
+                c1, c2 = st.columns(2)
+                new_status = c1.selectbox(
+                    "Status",
+                    ["New", "Investigating", "Resolved", "Dismissed"],
+                    index=["New", "Investigating", "Resolved", "Dismissed"].index(case["Status"]),
+                    key=f"hosted-status-{case_id}",
+                )
+                new_owner = c2.text_input("Assigned to", value=case["Assigned to"], key=f"hosted-owner-{case_id}")
+                new_notes = st.text_area("Notes", value=case["Notes"], key=f"hosted-notes-{case_id}", placeholder="What did you check? What should happen next?")
+                save_col, remove_col = st.columns([3, 1])
+                if save_col.button("Save follow-up", key=f"hosted-save-{case_id}", use_container_width=True):
+                    case.update({
+                        "Status": new_status,
+                        "Assigned to": new_owner.strip() or "Unassigned",
+                        "Notes": new_notes.strip(),
+                        "Updated (IST)": local_time(datetime.now(timezone.utc)),
+                    })
+                    st.success("Follow-up saved for this session.")
+                if remove_col.button("Remove", key=f"hosted-remove-{case_id}", use_container_width=True):
+                    del cases[case_id]
+                    st.rerun()
+
+        report_columns = ["Case ID", "Finding", "Status", "Assigned to", "Notes", "Updated (IST)"]
+        report = pd.DataFrame(list(cases.values()), columns=report_columns)
+        csv_data = report.to_csv(index=False).encode("utf-8-sig")
+        st.download_button(
+            "Download follow-up report (CSV)",
+            data=csv_data,
+            file_name=f"cyberguard-follow-ups-{datetime.now(INDIA_TZ).strftime('%Y%m%d-%H%M')}.csv",
+            mime="text/csv",
+            key="download-hosted-followups",
+            type="primary",
+            use_container_width=True,
+        )
+        st.caption("The download uses Streamlit's secure native download control. Hosted notes remain in the current app session; download the CSV before closing or refreshing the app.")
     else:
         conn = local_db()
         for finding in findings:
