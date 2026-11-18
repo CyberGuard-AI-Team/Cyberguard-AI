@@ -78,7 +78,7 @@ The hosted Streamlit application cannot directly inspect a visitor's computer. I
 | **What needs attention** | Converts technical rule matches into simple explanations and recommended actions. |
 | **My follow-ups** | Tracks case status, assignment, investigation notes, and downloadable case reports. |
 | **Activity summary** | Displays severity, event type, account, source, and time-based activity patterns. |
-| **Smart analysis** | Combines Isolation Forest, Autoencoder, LSTM, Transformer, and BERT-style log analysis to rank unusual records. |
+| **Smart analysis** | Combines Isolation Forest, Local Outlier Factor, and an Autoencoder to rank unusual records. |
 | **Ask CyberGuard** | Answers supported questions using evidence already present in the workspace. |
 | **Connect my PC** | Downloads the Windows collector or reads selected Windows events directly when run locally. |
 | **About CyberGuard** | Explains the workflow, every feature, data handling, and result interpretation. |
@@ -103,29 +103,23 @@ Typical recommendations include changing the password, signing out other session
 
 ## Hybrid ML and deep-learning engine
 
-CyberGuard's **Smart analysis** page combines one classical machine-learning model with four compact deep-learning models. Each model examines the same loaded records from a different point of view, and the ensemble combines their scores into one review priority.
+CyberGuard's **Smart analysis** page combines two unsupervised machine-learning models with one compact deep-learning model. The three models examine the same loaded records from different points of view, and the hybrid combines their scores into one review priority.
 
 | Model | What it learns | What can raise its score |
 |---|---|---|
 | **Isolation Forest** | Rare combinations of structured log fields | An uncommon account, source, event type, severity, or time pattern |
+| **Local Outlier Factor** | How each record compares with nearby records | A record whose local neighbourhood differs from the common pattern |
 | **Autoencoder** | How normal structured events can be reconstructed | An event whose features cannot be reconstructed well |
-| **LSTM** | The expected next event based on recent event order | An event sequence that changes unexpectedly |
-| **Transformer** | Relationships across a recent window of events | A next event that does not match the wider sequence context |
-| **BERT-style log model** | Bidirectional context within log-description tokens | Unusual words or token combinations in an event message |
-
-The BERT-style component is a small masked-language Transformer trained inside the current app session. It does not download a pretrained foundation model and does not send event descriptions to an external AI service.
 
 ### Ensemble configuration
 
-- **Isolation Forest:** 25%
-- **Autoencoder:** 25%
-- **LSTM:** 20%
-- **Transformer:** 15%
-- **BERT-style log model:** 15%
+- **Isolation Forest:** 34%
+- **Local Outlier Factor:** 33%
+- **Autoencoder:** 33%
 - **Random seed:** 42 for repeatable project demonstrations
 - **Minimum records in the UI:** 8; 30 or more are recommended for a more useful experiment
 - **Sensitivity / review proportion:** 5%, 10%, or 20%
-- If one deep-learning model cannot run, available model weights are rebalanced automatically.
+- Available model weights are rebalanced automatically if one model cannot run.
 
 ### Features used
 
@@ -139,7 +133,7 @@ The BERT-style component is a small masked-language Transformer trained inside t
 - One-hot encoded source IP
 - One-hot encoded event status
 
-The system remains unsupervised/self-supervised because security datasets often do not have reliable attack labels. Isolation Forest and the Autoencoder learn the current structured baseline, the LSTM and Transformer learn event order, and the BERT-style model learns log-message context.
+The system remains unsupervised/self-supervised because security datasets often do not have reliable attack labels. Isolation Forest learns rare combinations of structured fields, Local Outlier Factor compares local neighbourhoods, and the Autoencoder learns how well each event can be reconstructed from the current structured baseline.
 
 The displayed anomaly score is a **relative ranking within the current uploaded dataset**. It is not a probability of hacking or compromise, and every result must be reviewed with its evidence.
 
@@ -246,8 +240,8 @@ Imported timestamps are normalized and displayed in Indian Standard Time (`IST`,
 | [Python](https://www.python.org/) | Application, detection, authentication, and data-processing logic |
 | [Streamlit](https://streamlit.io/) | Interactive web interface and Community Cloud deployment |
 | [pandas](https://pandas.pydata.org/) | CSV/JSON processing, filtering, tables, and analytics |
-| [scikit-learn](https://scikit-learn.org/) | Isolation Forest anomaly detection |
-| [PyTorch](https://pytorch.org/) | Autoencoder, LSTM, Transformer, and BERT-style log model |
+| [scikit-learn](https://scikit-learn.org/) | Isolation Forest and Local Outlier Factor anomaly detection |
+| [PyTorch](https://pytorch.org/) | Autoencoder reconstruction model |
 | SQLite | Local account and investigation storage |
 | PowerShell | Windows Event Log collection with `Get-WinEvent` |
 | HTML/CSS/JavaScript | Styling, animations, and hosted browser-local investigation notes |
@@ -325,7 +319,7 @@ Python dependencies are listed in [`requirements.txt`](requirements.txt). Additi
 ```text
 Cyberguard-AI/
 ├── streamlit_app.py          # Current deployed Streamlit application
-├── cyberguard_dl.py           # Autoencoder, LSTM, Transformer, and BERT-style models
+├── cyberguard_dl.py           # Autoencoder reconstruction model
 ├── requirements.txt          # Streamlit, pandas, scikit-learn, and PyTorch
 ├── runtime.txt               # Python runtime used by Streamlit Community Cloud
 ├── STREAMLIT.md              # Streamlit workflow and deployment notes
@@ -342,7 +336,7 @@ This project is maintained through the [CyberGuard-AI-Team GitHub organization](
 | Contributor | GitHub | Streamlit profile |
 |---|---|---|
 | **Vaibhav Raj** | [@vaibhavrxj](https://github.com/vaibhavrxj) | [vaibhavrxj](https://share.streamlit.io/user/vaibhavrxj) |
-| **AnieeD** | [@AnieeD](https://github.com/AnieeD) | [anieed](https://share.streamlit.io/user/anieed) |
+| **Aniket** | [@AnieeD](https://github.com/AnieeD) | [anieed](https://share.streamlit.io/user/anieed) |
 | **Akhil Panwar** | [@akhilpanwar873](https://github.com/akhilpanwar873) | [akhilpanwar873](https://share.streamlit.io/user/akhilpanwar873) |
 
 ---

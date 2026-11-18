@@ -5,7 +5,7 @@ This folder-level app is an educational Streamlit port of the CyberGuard AI SOC 
 ## How CyberGuard works
 
 1. Upload a CSV/JSON event file, or collect selected Windows Event Logs in a local Windows run.
-2. Use **Check my activity** for the guided rule checks, or **Smart analysis** for the Isolation Forest anomaly ranking.
+2. Use **Check my activity** for the guided rule checks, or **Smart analysis** for the Isolation Forest + Local Outlier Factor + Autoencoder anomaly ranking.
 3. Read **What needs attention** for a plain-language explanation and suggested next action.
 4. Use **My follow-ups** to record what you checked and download a case report.
 
@@ -24,7 +24,7 @@ On the hosted site, **Connect my PC** provides a downloadable Windows PowerShell
 
 On Windows, open **Devices** and choose **Collect Windows logs on this PC**. The local app reads a selected recent window from Security sign-in / privilege / process / service events (IDs 4624, 4625, 4672, 4688, 4697) and System/Application warnings and errors. It analyzes the collected records in local session memory only. Security-log access may require starting the local app from an Administrator PowerShell.
 
-The **ML Lab** runs an Isolation Forest model with 200 trees over the currently stored telemetry. It uses event hour, severity, event type frequency, account frequency, source-address frequency, and one-hot encoded categories to rank anomalous records. **Investigations** stores case status, assignee, and notes in `cyberguard-local.db` on a local Windows run. On the hosted site, investigation notes are saved in the visitor's browser and can be exported as a CSV report.
+The **ML Lab** combines an Isolation Forest model with 200 trees, Local Outlier Factor, and a compact Autoencoder trained on the current workspace. It uses event hour, severity, event type frequency, account frequency, source-address frequency, and one-hot encoded categories to rank anomalous records. **Investigations** stores case status, assignee, and notes in `cyberguard-local.db` on a local Windows run. On the hosted site, investigation notes are saved in the visitor's browser and can be exported as a CSV report.
 
 ## Deploy with Streamlit Community Cloud
 

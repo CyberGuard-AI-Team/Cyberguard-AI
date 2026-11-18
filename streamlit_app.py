@@ -20,6 +20,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 from sklearn.ensemble import IsolationForest
+from sklearn.neighbors import LocalOutlierFactor
 
 
 
@@ -417,7 +418,7 @@ FEATURE_GUIDES = {
     "Findings": ("What needs attention", "Shows possible security concerns in plain language, along with the safest next action."),
     "Investigations": ("My follow-ups", "Keep a simple record of what you checked, who is handling it, and what should happen next."),
     "Analytics": ("Activity summary", "Shows patterns in your activity over time so you can spot changes without reading every record."),
-    "ML Lab": ("Smart analysis", "Combines Isolation Forest, an Autoencoder, LSTM, Transformer, and a BERT-style log model to rank unusual activity and explain why it stood out."),
+    "ML Lab": ("Smart analysis", "Combines Isolation Forest, Local Outlier Factor, and an Autoencoder to rank unusual activity and explain why it stood out."),
     "Assistant": ("Ask CyberGuard", "Ask everyday questions about the activity shown in this workspace and get a simple answer."),
     "Devices": ("Connect my PC", "When run locally on Windows, this can bring selected Windows Event Log activity into the workspace."),
 }
@@ -439,9 +440,10 @@ def in_window(event: dict, window: str) -> bool:
     return stamp >= datetime.now(timezone.utc) - timedelta(hours=hours)
 
 
-def anomaly_scores(events: list[dict], contamination: float) -> pd.DataFrame:
-    """Score stored telemetry with an unsupervised Isolation Forest model."""
+def structured_log_features(events: list[dict]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Convert stored log records into the shared numeric anomaly feature matrix."""
     frame = pd.DataFrame(events).copy()
+    frame["id"] = frame["id"].astype(str)
     frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
     frame["hour"] = frame["timestamp"].dt.hour
     frame["severity_weight"] = frame["severity"].map({"Informational": 0, "Low": 1, "Medium": 2, "High": 3, "Critical": 4}).fillna(0)
@@ -451,6 +453,12 @@ def anomaly_scores(events: list[dict], contamination: float) -> pd.DataFrame:
     encoded = pd.get_dummies(frame[["eventType", "user", "sourceIp", "status"]].fillna("unknown"), dtype=float)
     numeric = frame[["hour", "severity_weight", "type_frequency", "actor_frequency", "source_frequency"]].astype(float)
     features = pd.concat([numeric, encoded], axis=1)
+    return frame, features
+
+
+def anomaly_scores(events: list[dict], contamination: float) -> pd.DataFrame:
+    """Score stored telemetry with an unsupervised Isolation Forest model."""
+    frame, features = structured_log_features(events)
     model = IsolationForest(contamination=contamination, random_state=42, n_estimators=200)
     prediction = model.fit_predict(features)
     raw_score = -model.decision_function(features)
@@ -476,8 +484,20 @@ def anomaly_scores(events: list[dict], contamination: float) -> pd.DataFrame:
     return result.sort_values("anomaly_score", ascending=False)
 
 
+def local_outlier_factor_scores(events: list[dict], contamination: float) -> pd.DataFrame:
+    """Score records by comparing each event with its nearest neighbours."""
+    frame, features = structured_log_features(events)
+    neighbour_count = max(2, min(20, len(frame) - 1))
+    model = LocalOutlierFactor(n_neighbors=neighbour_count, contamination=contamination)
+    model.fit_predict(features)
+    raw_score = -model.negative_outlier_factor_
+    scale = raw_score.max() - raw_score.min()
+    frame["lof_score"] = 50.0 if scale == 0 else ((raw_score - raw_score.min()) / scale * 100)
+    return frame[["id", "lof_score"]]
+
+
 def hybrid_anomaly_scores(events: list[dict], contamination: float, progress=None) -> tuple[pd.DataFrame, list[dict]]:
-    """Merge the ML baseline with four compact deep-learning anomaly models."""
+    """Combine Isolation Forest, Local Outlier Factor, and one Autoencoder."""
     baseline = anomaly_scores(events, contamination).rename(columns={"anomaly_score": "isolation_forest_score"})
     diagnostics = [{
         "model": "Isolation Forest",
@@ -487,17 +507,39 @@ def hybrid_anomaly_scores(events: list[dict], contamination: float, progress=Non
         "records": len(events),
         "note": "200 trees; retained as the explainable machine-learning baseline.",
     }]
+    if progress:
+        progress("Local Outlier Factor", 0.12)
+    try:
+        lof_scores = local_outlier_factor_scores(events, contamination)
+        combined = baseline.merge(lof_scores, on="id", how="left")
+        diagnostics.append({
+            "model": "Local Outlier Factor",
+            "family": "Neighbour-based unsupervised ML",
+            "status": "Completed",
+            "final_loss": None,
+            "records": len(events),
+            "note": f"Compared each event with its {max(2, min(20, len(events) - 1))} nearest neighbours.",
+        })
+    except ValueError as exc:
+        combined = baseline.copy()
+        diagnostics.append({
+            "model": "Local Outlier Factor",
+            "family": "Neighbour-based unsupervised ML",
+            "status": "Unavailable",
+            "final_loss": None,
+            "records": len(events),
+            "note": str(exc),
+        })
     try:
         from cyberguard_dl import DeepLearningUnavailable, deep_learning_scores
 
         deep_scores, deep_diagnostics = deep_learning_scores(events, progress=progress)
         diagnostics.extend(deep_diagnostics)
-        combined = baseline.merge(deep_scores, on="id", how="left")
+        combined = combined.merge(deep_scores, on="id", how="left")
     except (ImportError, DeepLearningUnavailable, ValueError) as exc:
-        combined = baseline.copy()
         diagnostics.append({
-            "model": "Deep-learning ensemble",
-            "family": "Autoencoder / LSTM / Transformer / BERT-style",
+            "model": "Autoencoder",
+            "family": "Reconstruction neural network",
             "status": "Unavailable",
             "final_loss": None,
             "records": len(events),
@@ -505,11 +547,9 @@ def hybrid_anomaly_scores(events: list[dict], contamination: float, progress=Non
         })
 
     score_weights = {
-        "isolation_forest_score": 0.25,
-        "autoencoder_score": 0.25,
-        "lstm_score": 0.20,
-        "transformer_score": 0.15,
-        "bert_score": 0.15,
+        "isolation_forest_score": 0.34,
+        "lof_score": 0.33,
+        "autoencoder_score": 0.33,
     }
     available_scores = [column for column in score_weights if column in combined and combined[column].notna().any()]
     weighted_total = pd.Series(0.0, index=combined.index)
@@ -522,10 +562,8 @@ def hybrid_anomaly_scores(events: list[dict], contamination: float, progress=Non
 
     model_names = {
         "isolation_forest_score": "Isolation Forest",
+        "lof_score": "Local Outlier Factor",
         "autoencoder_score": "Autoencoder",
-        "lstm_score": "LSTM",
-        "transformer_score": "Transformer",
-        "bert_score": "BERT-style text model",
     }
     thresholds = {
         column: combined[column].quantile(max(0.0, 1.0 - contamination))
@@ -897,13 +935,13 @@ with st.sidebar:
     <div class='cg-eyebrow'>PROJECT TEAM / GITHUB</div>
     <div class='cg-team-list'>
       <a class='cg-team-link' href='https://github.com/vaibhavrxj' target='_blank'>Vaibhav Raj <span>@vaibhavrxj ↗</span></a>
-      <a class='cg-team-link' href='https://github.com/AnieeD' target='_blank'>AnieeD <span>@AnieeD ↗</span></a>
+      <a class='cg-team-link' href='https://github.com/AnieeD' target='_blank'>Aniket <span>@AnieeD ↗</span></a>
       <a class='cg-team-link' href='https://github.com/akhilpanwar873' target='_blank'>Akhil Panwar <span>@akhilpanwar873 ↗</span></a>
     </div>
     """, unsafe_allow_html=True)
     st.markdown("---")
     model_copy = "Ready for uploaded activity" if not events else f"{len(events):,} records available"
-    st.markdown(f"<div class='cg-eyebrow'>MODEL / ANALYTICS</div><p style='font-size:12px;color:#48e39b'><span class='cg-live-dot'></span>{model_copy}</p><p style='font-size:11px;color:#8293ae'>Isolation Forest + four deep-learning models</p>", unsafe_allow_html=True)
+    st.markdown(f"<div class='cg-eyebrow'>MODEL / ANALYTICS</div><p style='font-size:12px;color:#48e39b'><span class='cg-live-dot'></span>{model_copy}</p><p style='font-size:11px;color:#8293ae'>Isolation Forest+Local Outlier Factor+ DL models</p>", unsafe_allow_html=True)
     if st.button("↻  Clear loaded logs", use_container_width=True):
         st.session_state.events = []
         st.session_state.findings = []
@@ -1011,7 +1049,7 @@ elif page == "About CyberGuard":
             st.markdown(f"<div class='cg-card'><b>{title}</b><div style='color:#aebdc2;font-size:13px;margin-top:7px'>{description}</div></div>", unsafe_allow_html=True)
     with data:
         st.markdown("### What happens when you use CyberGuard")
-        st.markdown("**Activity history** works with the records in the current workspace. **Check my activity** uses clear security rules to look for sign-in patterns. **Smart analysis** combines Isolation Forest with Autoencoder, LSTM, Transformer, and BERT-style models to rank records that differ from the current activity pattern. **What needs attention** turns those results into plain language.\n\nWhen you use the hosted app, follow-up notes are saved in your browser and can be downloaded as a CSV file. Windows Event Log collection is available only when the project runs locally on a Windows computer.")
+        st.markdown("**Activity history** works with the records in the current workspace. **Check my activity** uses clear security rules to look for sign-in patterns. **Smart analysis** combines Isolation Forest, Local Outlier Factor, and an Autoencoder to rank records that differ from the current activity pattern. **What needs attention** turns those results into plain language.\n\nWhen you use the hosted app, follow-up notes are saved in your browser and can be downloaded as a CSV file. Windows Event Log collection is available only when the project runs locally on a Windows computer.")
         st.info("CyberGuard helps you decide what to review first. For an unfamiliar sign-in or a possible account issue, change the password and contact your IT support team.")
 
 elif page == "Overview":
@@ -1294,7 +1332,7 @@ elif page == "Analytics":
             st.caption("Times are shown in Indian Standard Time (IST, UTC+05:30). Hover over the plot to inspect values.")
 
 elif page == "ML Lab":
-    st.caption("CyberGuard combines one machine-learning model with four deep-learning models, then explains which activity deserves a closer look.")
+    st.caption("CyberGuard combines two machine-learning models with one Autoencoder, then explains which activity deserves a closer look.")
     if len(events) < 8:
         st.info("Add at least 8 event records to create the ML and deep-learning baselines. Thirty or more records produce a more useful classroom experiment.")
     else:
@@ -1306,14 +1344,14 @@ elif page == "ML Lab":
         sensitivity = c1.select_slider("How much should CyberGuard flag?", options=["Only unusual", "Balanced", "Show more"], value="Balanced")
         contamination = {"Only unusual": 0.05, "Balanced": 0.10, "Show more": 0.20}[sensitivity]
         c2.metric("Activity reviewed", len(events))
-        st.markdown("<div class='cg-card'><div class='cg-eyebrow'>HYBRID INTELLIGENCE</div><div style='font-size:13px;margin-top:8px;color:#b8c5d8'><b>Machine Learning:</b> Isolation Forest &nbsp;·&nbsp; <b>Deep Learning:</b> Autoencoder, LSTM, Transformer and BERT-style log language model</div></div>", unsafe_allow_html=True)
+        st.markdown("<div class='cg-card'><div class='cg-eyebrow'>HYBRID INTELLIGENCE</div><div style='font-size:13px;margin-top:8px;color:#b8c5d8'><b>Machine Learning:</b> Isolation Forest and Local Outlier Factor &nbsp;·&nbsp; <b>Deep Learning:</b> Autoencoder</div></div>", unsafe_allow_html=True)
         if st.button("Run ML + deep-learning analysis", type="primary", use_container_width=True):
             progress_bar = st.progress(0, text="Preparing the hybrid analysis…")
 
             def update_model_progress(model_name: str, fraction: float) -> None:
                 progress_bar.progress(min(100, int(fraction * 100)), text=f"Training {model_name} on the current logs…")
 
-            with st.spinner("The deep-learning models are training inside this app session. This can take a short time."):
+            with st.spinner("The Autoencoder is training inside this app session. This can take a short time."):
                 st.session_state.ml_results, st.session_state.ml_diagnostics = hybrid_anomaly_scores(
                     events, contamination, progress=update_model_progress
                 )
@@ -1322,7 +1360,7 @@ elif page == "ML Lab":
             progress_bar.progress(100, text="Hybrid analysis complete")
         results = st.session_state.get("ml_results")
         if results is None:
-            st.info("Choose “Run ML + deep-learning analysis” to train the five-model ensemble and get a simple review list.")
+            st.info("Choose “Run ML + deep-learning analysis” to run the three-model hybrid and get a simple review list.")
         else:
             anomalies = results[results["model_label"] == "Anomalous"]
             if anomalies.empty:
@@ -1339,18 +1377,18 @@ elif page == "ML Lab":
             if diagnostics:
                 completed = sum(item.get("status") == "Completed" for item in diagnostics)
                 metric_columns = st.columns(3)
-                metric_columns[0].metric("Models completed", f"{completed} / 5")
+                metric_columns[0].metric("Models completed", f"{completed} / 3")
                 metric_columns[1].metric("Review-first records", int((results["model_label"] == "Anomalous").sum()))
                 metric_columns[2].metric("Highest ensemble score", f"{results['anomaly_score'].max():.1f} / 100")
             with st.expander("Compare each model's score"):
-                score_columns = [column for column in ["isolation_forest_score", "autoencoder_score", "lstm_score", "transformer_score", "bert_score", "anomaly_score"] if column in results]
-                score_labels = {"id": "Record ID", "eventType": "Activity", "isolation_forest_score": "Isolation Forest", "autoencoder_score": "Autoencoder", "lstm_score": "LSTM", "transformer_score": "Transformer", "bert_score": "BERT-style", "anomaly_score": "Combined score"}
+                score_columns = [column for column in ["isolation_forest_score", "lof_score", "autoencoder_score", "anomaly_score"] if column in results]
+                score_labels = {"id": "Record ID", "eventType": "Activity", "isolation_forest_score": "Isolation Forest", "lof_score": "Local Outlier Factor", "autoencoder_score": "Autoencoder", "anomaly_score": "Combined score"}
                 score_table = results[["id", "eventType", *score_columns]].rename(columns=score_labels).copy()
                 numeric_score_columns = [label for label in score_labels.values() if label in score_table and label not in ("Record ID", "Activity")]
                 score_table[numeric_score_columns] = score_table[numeric_score_columns].round(2)
                 st.dataframe(score_table, use_container_width=True, hide_index=True)
             with st.expander("Technical details for your M.Tech project"):
-                st.markdown("**Machine-learning baseline:** Isolation Forest with 200 trees.\n\n**Autoencoder:** reconstructs structured event features; high reconstruction error raises the review score.\n\n**LSTM:** predicts the next structured event from the preceding event window; high prediction error indicates an unusual sequence.\n\n**Transformer:** uses self-attention over the recent event window and independently predicts the next event representation.\n\n**BERT-style log model:** uses a compact bidirectional Transformer and masked-token prediction over event descriptions. It is trained from the current workspace and does not send log text to an external AI service.\n\n**Ensemble weights:** Isolation Forest 25%, Autoencoder 25%, LSTM 20%, Transformer 15%, BERT-style text model 15%. Weights are rebalanced automatically if a model cannot run.\n\n**Interpretation:** every score is a relative priority within the records currently loaded. It is not a probability of compromise and it is not proof of an attack.")
+                st.markdown("**Isolation Forest:** Uses 200 random trees to identify rare combinations of structured log fields.\n\n**Local Outlier Factor:** Compares each event with nearby records. An event receives a higher score when its local pattern differs from its neighbours.\n\n**Autoencoder:** Learns to reconstruct the current log-feature pattern. A high reconstruction error raises the review score because the event does not fit that pattern well.\n\n**Hybrid weights:** Isolation Forest 34%, Local Outlier Factor 33%, and Autoencoder 33%. Available model weights are rebalanced automatically if a model cannot run.\n\n**Interpretation:** every score is a relative priority within the records currently loaded. It is not a probability of compromise and it is not proof of an attack.")
                 diagnostics = st.session_state.get("ml_diagnostics", [])
                 if diagnostics:
                     diagnostic_frame = pd.DataFrame(diagnostics).rename(columns={"model": "Model", "family": "Method", "status": "Status", "final_loss": "Final training loss", "records": "Records", "note": "Notes"})
